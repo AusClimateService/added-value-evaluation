@@ -144,6 +144,25 @@ def tidy_coords(ds):
     return ds
 
 
+def convert_units(ds):
+    """
+    Convert to standard units (e.g., Kelvin)
+
+    :param ds: xarray dataset
+    :return: Dataset
+    """
+
+    logger.info("Checking units")
+    for key in ds:
+        if "units" in ds[key].attrs:
+            if ds[key].attrs["units"] == "degrees_Celsius":
+                ds[key] = ds[key] + 273.15
+                ds[key].attrs["units"] = "K"
+                logger.debug("Converting units from degrees_Celsius to K")
+    return ds
+
+
+
 def open_dataset(ifiles, **kwargs):
     """Open ifiles with xarray and return dataset
 
@@ -164,6 +183,8 @@ def open_dataset(ifiles, **kwargs):
     #< Tidy the coordinates
     ds = rename_helper(ds, **{"latitude":"lat", "longitude": "lon", "lev":"pressure"})
     ds = tidy_coords(ds)
+    #< Unit conversion
+    ds = convert_units(ds)
 
     return ds
 

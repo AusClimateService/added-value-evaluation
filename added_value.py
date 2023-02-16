@@ -30,6 +30,11 @@ def parse_arguments():
     parser.add_argument("--varname-rcm", dest='varname_rcm', nargs='?', type=str, default="", help="Variable name in RCM files")
     parser.add_argument("--varname-obs", dest='varname_obs', nargs='?', type=str, default="", help="Variable name in reference files")
 
+    parser.add_argument("--ifiles-mask", dest='ifiles_mask', nargs='*', type=str, default=[], help="Input masking files")
+    parser.add_argument("--varname-mask", dest='varname_mask', nargs='?', type=str, default="", help="Variable name in masking files")
+    parser.add_argument("--value-mask", dest='value_mask', nargs='?', type=float, default=-999, help="Value to use for masking (e.g. larger than 0")
+    parser.add_argument("--op-mask", dest='op_mask', nargs='?', type=str, default="", help="Operation to use for masking (e.g. larger, smaller")
+
     parser.add_argument("--quantile", dest='quantile', nargs='?', type=float, default="", help="Quantile to calculate added value for")
 
     parser.add_argument("--datestart", dest='datestart', nargs='?', type=str, default="", help="Start date of analysis period")
@@ -89,7 +94,8 @@ def added_value(da_gcm, da_rcm, da_obs, quantile, measure="AVrmse", mask=None):
         assert False, f"Distance measure of {measure} not implemented!"
     av = fun(X_obs, X_gcm, X_rcm)
     #< Mask data
-    if mask:
+    if not mask is None:
+        mask = lib.regrid(mask, X_rcm, regrid_method="nearest_s2d")
         av = xr.where(mask, av, np.nan)
     #< Convert av to a dataset
     av = av.to_dataset(name="av")
@@ -113,6 +119,11 @@ def main():
     logger.debug(ds_gcm)
     logger.debug(ds_rcm)
     logger.debug(ds_obs)
+    if args.ifiles_mask:
+        logger.info(f"Opening mask")
+        mask = lib.open_dataset(args.ifiles_mask)[args.varname_mask]
+    else:
+        mask = None
 
     #< Get the history of the input files
     inlogs = {}
@@ -140,9 +151,25 @@ def main():
     da_gcm = da_gcm.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
     da_rcm = da_rcm.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
     da_obs = da_obs.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
+    if args.ifiles_mask:
+        mask = mask.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
+
+    #< Do masking
+    if args.ifiles_mask:
+        if args.op_mask == "smallerthan":
+            mask = xr.where(mask <= args.value_mask, 1, 0)
+        elif args.op_mask == "smaller":
+            mask = xr.where(mask < args.value_mask, 1, 0)
+        elif args.op_mask == "largerthan":
+            mask = xr.where(mask >= args.value_mask, 1, 0)
+        elif args.op_mask == "larger":
+            mask = xr.where(mask > args.value_mask, 1, 0)
+        elif args.op_mask == "equal":
+            mask = xr.where(mask == args.value_mask, 1, 0)
+
 
     #< Calculate added value
-    av = added_value(da_gcm, da_rcm, da_obs, args.quantile, measure="AVrmse")
+    av = added_value(da_gcm, da_rcm, da_obs, args.quantile, measure="AVrmse", mask=mask)
 
     #< Save added value to netcdf
     logger.info("Saving to netcdf")
