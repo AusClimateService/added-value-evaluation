@@ -7,6 +7,41 @@ import pandas as pd
 import xesmf as xe
 import matplotlib.pyplot as plt
 import warnings
+import ast
+import logging
+import sys
+import cmdline_provenance as cmdprov
+
+
+def get_logger(name, level='debug'):
+    """Get a logging object.
+
+    Args:
+        name (str): Name of the module currently logging.
+        level (str, optional): Level of logging to emit. Defaults to 'debug'.
+
+    Returns:
+        logging.Logger: Logging object.
+    """
+
+    logger = logging.Logger(name)
+    handler = logging.StreamHandler(sys.stdout)
+    level = getattr(logging, level.upper())
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+    logger.setLevel(level)
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
+    return logger
+
+#< Get logger
+logger = get_logger(__name__)
+
+
+def literal_eval(v):
+    if v:
+        return ast.literal_eval(v)
 
 
 def str2bool(v):
@@ -40,6 +75,75 @@ def guess_bounds(dim):
     return bounds
 
 
+def rename_helper(ds, **kwargs):
+    """
+    Helper to rename variables or coordinates in dataset.
+
+    :param ds: Input dataset
+    :return:   Renamed dataset
+    """
+    for key in kwargs:
+        if key in ds.coords:
+            ds = ds.rename({key:kwargs[key]})
+    return ds
+
+
+def strictly_increasing(L):
+    """
+    Check if input is strictly increasing.
+
+    :param L: List of values
+    :return:  True/False if strictly increasing
+    """
+    return all(x<y for x, y in zip(L, L[1:]))
+
+
+def sortCoordsAscending(ds):
+    """
+    Sort the coordinates of a dataset in ascending order.
+
+    :param ds: xarray dataset
+    :return:   Sorted dataset
+    """
+    coords2ignore = ['forecast_reference_time', 'forecast_period', 'sigma'] # Don't worry about sorting those coordinates
+    for c in ds.coords:
+        if c in coords2ignore:
+            continue
+        if c == 'x' or c=='y': # Don't sort rotated lat and lon
+            continue
+        cval = ds[c].values
+        if ds[c].shape: # check if it has a length (e.g. ignore single length dimensions)
+            if len(ds[c].shape) == 1: #< Only for rectilinear grid (i.e. lat and lon are 1d)
+                if not strictly_increasing(cval):
+                    # with dask.config.set({"array.chunk-size": "128 MiB"}): #< Fixes an issue with dask where sorting re-chunks array to tiny sizes
+                    ds = ds.sortby(ds[c])
+    return ds
+
+
+def tidy_coords(ds):
+    """
+    Tidy the coordinates of a dataset.
+
+    :param ds: xarray dataset
+    :param ifiles: input files
+    :param rm_first: remove the first double entry
+    :param rm_second: remove the second double entry
+    :return:   Tidied up dataset
+    """
+    #< Make sure time index is unique
+    if "time" in ds.coords:
+        _,index = np.unique(ds['time'], return_index=True)
+        if not len(index) == len(ds['time']):
+            logger.warning('In tidy_coords: Duplicate time indicies found and removed!')
+            ds = ds.isel(time=index)
+    #< Make sure lon range is 0 to 360
+    if 'longitude' in ds.coords:
+        ds = ds.assign_coords(longitude=(ds['longitude'] % 360))
+    #< Make sure coordinates are ascending order
+    ds = sortCoordsAscending(ds)
+    return ds
+
+
 def open_dataset(ifiles, **kwargs):
     """Open ifiles with xarray and return dataset
 
@@ -55,8 +159,12 @@ def open_dataset(ifiles, **kwargs):
         if key in kwargs:
             read_kwargs[key] = kwargs[key]
     if not ifiles: # check if list is empty
-        print(f'No files for {ifiles}')
+        logger.error(f'No files for {ifiles}')
     ds = xr.open_mfdataset(ifiles, **read_kwargs)
+    #< Tidy the coordinates
+    ds = rename_helper(ds, **{"latitude":"lat", "longitude": "lon", "lev":"pressure"})
+    ds = tidy_coords(ds)
+
     return ds
 
 
@@ -125,6 +233,21 @@ def AVmse_norm(X_obs, X_gdd, X_rcm):
 
     with xr.set_options(keep_attrs=True):
         out = AVse_norm(X_obs, X_gdd, X_rcm).mean(dim=['lat','lon'])
+    return out
+
+
+def AVrmse(X_obs, X_gdd, X_rcm):
+    """
+    Calculate added value (AV) using the root mean square error between the global
+    driving model (gdd), the regional climate model (rcm) and observations (obs).
+
+    :param X_obs: xarray containing the observations
+    :param X_gdd: xarray containing the global driving data
+    :param X_rcm: xarray containing the regional climate model
+    :return:      xarray containting the AV (RMSE) for each grid-point
+    """
+    with xr.set_options(keep_attrs=True):
+        out = np.sqrt((X_gdd-X_obs)**2) - np.sqrt((X_rcm-X_obs)**2)
     return out
 
 
@@ -286,6 +409,7 @@ def regrid_helper(ds, other, exclude_list=["time_bnds"], **kwargs):
     regridder._grid_in  = None # Otherwise there is trouble with dask
     regridder._grid_out = None # Otherwise there is trouble with dask
     ds_regrid = regridder(ds, keep_attrs=True)
+    ds_regrid = rename_helper(ds_regrid, **{"latitude":"lat", "longitude": "lon"}) #< Make sure we get lat and lon back as names and not latitude, longitude
     return ds_regrid
 
 
@@ -341,11 +465,12 @@ def _regrid(ds, other, **kwargs):
         elif ds[lon_name][0] != other[lon_name_other][0] or ds[lat_name][0] != other[lat_name_other][0]:
             default_method = "bilinear"
         else:
-            print("Input dataset and other grid are already identical!")
+            logger.info("Input dataset and other grid are already identical!")
             return ds
         method = default_method
     else:
         method = kwargs["regrid_method"]
+    logger.info(f"Using {method} for re-gridding!")
 
     if "regrid_dir" in kwargs:
         regrid_dir = kwargs["regrid_dir"] + '/'
@@ -354,7 +479,7 @@ def _regrid(ds, other, **kwargs):
 
     if regrid_dir and not os.path.exists(regrid_dir):
         os.makedirs(regrid_dir, exist_ok=True)
-        print(f"Created new directory: {regrid_dir}")
+        logger.info(f"Created new directory: {regrid_dir}")
 
     default_weight_filename = f'{regrid_dir}weights_{method}_{ds[lat_name][0].values}_{ds[lon_name][0].values}_{len(ds[lat_name])}x{len(ds[lon_name])}_{other[lat_name_other][0].values}_{other[lon_name_other][0].values}_{len(other[lat_name_other])}x{len(other[lon_name_other])}.nc'
     if not "weight_filename" in kwargs:
@@ -368,9 +493,9 @@ def _regrid(ds, other, **kwargs):
     if "reuse_regrid_weights" in kwargs:
         if kwargs["reuse_regrid_weights"]:
             if not os.path.isfile(kwargs["weight_filename"]):
-                print(f"Creating weight file: {kwargs['weight_filename']}")
+                logger.info(f"Creating weight file: {kwargs['weight_filename']}")
             else:
-                print(f"Re-using weight file: {kwargs['weight_filename']}")
+                logger.info(f"Re-using weight file: {kwargs['weight_filename']}")
 
     #< Do the regridding
     return regrid_helper(ds, other, method=method, reuse_weights=reuse_weights, filename=kwargs["weight_filename"])
@@ -406,3 +531,28 @@ def find_dimname_in_acceptable(ds, accept=[]):
     assert len(found_names) < 2, f"Found more than one name that match accepatable names!\nNames in dataset: {list(ds.keys())}\nAcceptable names: {accept}"
     assert len(found_names) != 0, f"Found no names that match accepatable names!\nNames in dataset: {list(ds.keys())}\nAcceptable names: {accept}"
     return found_names[0]
+
+
+def makedir(file):
+    """Check if directory for the given input file exists, if not create it.
+
+    Args:
+        file (string): Input file name
+
+    Returns:
+        None
+    """
+    dir = os.path.dirname(file)
+    if dir and not os.path.exists(dir):
+        logger.info(f"Create new dir at: {dir}")
+        os.makedirs(dir, exist_ok=True)
+
+
+def write2nc(ds, *args, inlogs=None, **kwargs):
+    #< Create directory if it does not exist
+    makedir(args[0])
+    #< Add new history
+    log = cmdprov.new_log(infile_logs=inlogs) # Get new history
+    ds.attrs['history'] = log
+    #< Save output
+    return ds.to_netcdf(*args, **kwargs)
