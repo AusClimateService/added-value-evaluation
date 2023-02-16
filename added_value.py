@@ -14,6 +14,7 @@ import dask.distributed
 import sys
 import warnings
 import lib
+import json
 
 #< Get logger
 logger = lib.get_logger(__name__)
@@ -35,7 +36,9 @@ def parse_arguments():
     parser.add_argument("--value-mask", dest='value_mask', nargs='?', type=float, default=-999, help="Value to use for masking (e.g. larger than 0")
     parser.add_argument("--op-mask", dest='op_mask', nargs='?', type=str, default="", help="Operation to use for masking (e.g. larger, smaller")
 
-    parser.add_argument("--quantile", dest='quantile', nargs='?', type=float, default="", help="Quantile to calculate added value for")
+    parser.add_argument("--process", dest='process', nargs='?', type=str, default="", help="Process to get added value for (e.g., quantile)")
+    parser.add_argument("--process_kwargs", dest='process_kwargs', nargs='?', type=json.loads, default="{}", help="Kwargs to pass to process function (e.g., \'{\"quantile\": 0.95}\' 0.95 for quantile)")
+    parser.add_argument("--distance-measure", dest='distance_measure', nargs='?', type=str, default="", help="Distance measure to use for AV calculation")
 
     parser.add_argument("--datestart", dest='datestart', nargs='?', type=str, default="", help="Start date of analysis period")
     parser.add_argument("--dateend", dest='dateend', nargs='?', type=str, default="", help="End date of analysis period")
@@ -56,42 +59,46 @@ def parse_arguments():
 
 
 
-def added_value(da_gcm, da_rcm, da_obs, quantile, measure="AVrmse", mask=None):
+def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_measure="AVrmse", mask=None):
     """Calculate added value statistic from driving model (da_gcm), regional model (da_rcm) and reference (da_obs) dataarray
 
     Args:
         da_gcm (xarray dataarray): Driving model data
         da_rcm (xarray dataarray): Regional model data
         da_obs (xarray dataarray): Reference data
+        process (str): Process to calculate AV for (e.g., quantile)
+        process_kwargs (dict): Kwargs to pass to "process" (e.g., {'quantile':0.95})
         measure (str): Distance measure to use for added value calculation
-        quantile (float): Quantile to calculate added value for (e.g., 0.9)
         mask (xarray dataarray): Array (with 0 & 1) used for masking.
 
     Returns:
         xarray dataset : Added value
     """
-
-    #< Re-chunk the data because quantiles cannot be calculated over chunked dimensions
-    logger.info(f"Re-chunking data")
-    da_gcm = da_gcm.chunk({"time":-1, "lat":"auto"})
-    da_rcm = da_rcm.chunk({"time":-1, "lat":"auto"})
-    da_obs = da_obs.chunk({"time":-1, "lat":"auto"})
-    #< Calculate quantile
-    logger.info(f"Calculating {quantile*100}th quantile")
-    X_gcm = da_gcm.quantile(quantile,"time", skipna=True).load()
-    X_rcm = da_rcm.quantile(quantile,"time", skipna=True).load()
-    X_obs = da_obs.quantile(quantile,"time", skipna=True).load()
+    #< Make sure all dataarrays have the same units
+    assert "units" in da_gcm.attrs, f"da_gcm has no units attribute"
+    assert "units" in da_rcm.attrs, f"da_rcm has no units attribute"
+    assert "units" in da_obs.attrs, f"da_obs has no units attribute"
+    assert da_gcm.attrs["units"] == da_rcm.attrs["units"] == da_obs.attrs["units"], f"Not all dataarrays have the same units: {da_gcm.attrs['units']} != {da_rcm.attrs['units']} != {da_obs.attrs['units']}"
+    #< Search for "process" function in library and run it on all three dataarrays
+    if hasattr(lib, process):
+        fun = getattr(lib, process)
+    else:
+        assert False, f"{process} not implemented!"
+    logger.info(f"Calculating {process}")
+    X_gcm = fun(da_gcm, **process_kwargs)
+    X_rcm = fun(da_rcm, **process_kwargs)
+    X_obs = fun(da_obs, **process_kwargs)
     #< Regrid all quantiles to the RCM resolution
     logger.info(f"Regridding GCM data to RCM grid")
     X_gcm = lib.regrid(X_gcm, X_rcm)
     logger.info(f"Regridding obs data to RCM grid")
     X_obs = lib.regrid(X_obs, X_rcm)
     #< Calculate added value
-    logger.info(f"Calculating added value using {measure}")
-    if hasattr(lib, measure):
-        fun = getattr(lib, measure)
+    logger.info(f"Calculating added value using {distance_measure}")
+    if hasattr(lib, distance_measure):
+        fun = getattr(lib, distance_measure)
     else:
-        assert False, f"Distance measure of {measure} not implemented!"
+        assert False, f"Distance measure of {distance_measure} not implemented!"
     av = fun(X_obs, X_gcm, X_rcm)
     #< Mask data
     if not mask is None:
@@ -167,9 +174,8 @@ def main():
         elif args.op_mask == "equal":
             mask = xr.where(mask == args.value_mask, 1, 0)
 
-
     #< Calculate added value
-    av = added_value(da_gcm, da_rcm, da_obs, args.quantile, measure="AVrmse", mask=mask)
+    av = added_value(da_gcm, da_rcm, da_obs, args.process, args.process_kwargs, distance_measure=args.distance_measure, mask=mask)
 
     #< Save added value to netcdf
     logger.info("Saving to netcdf")

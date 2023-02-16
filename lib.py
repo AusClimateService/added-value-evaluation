@@ -577,3 +577,38 @@ def write2nc(ds, *args, inlogs=None, **kwargs):
     ds.attrs['history'] = log
     #< Save output
     return ds.to_netcdf(*args, **kwargs)
+
+
+def quantile(da, quantile=None):
+    """Calculate quantile for dataarray
+
+    Args:
+        da (xarray dataarray): Input dataarray
+        quantile (float): Quantile to calculate
+
+    Returns:
+        xarray datarray
+    """
+    #< Re-chunk the data because quantiles cannot be calculated over chunked dimensions
+    logger.info(f"Re-chunking data")
+    da = da.chunk({"time":-1, "lat":"auto"})
+    #< Calculate quantile
+    logger.info(f"Calculating {quantile*100}th quantile")
+    X = da.quantile(quantile,"time", skipna=True).load()
+    return X
+
+
+def count_above_threshold(da, threshold=None):
+    """Calculate the number of times a threshold is exceeded.
+
+    Args:
+        da (xarray dataarray): Input dataarray
+        threshold (float): Threshold to exceed
+
+    Returns:
+        xarray datarray
+    """
+    #< Calculate quantile
+    logger.info(f"Calculating how often {threshold} is exceeded")
+    X = xr.where(da>threshold, 1, 0).sum("time").load()
+    return X
