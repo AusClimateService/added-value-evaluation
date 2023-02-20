@@ -161,18 +161,20 @@ def main():
     da_obs = da_obs.sel(time=slice(args.datestart, args.dateend))
 
     #< Select certain months
-    logger.info(f"Selecting months {args.months}")
-    da_gcm = da_gcm.sel(time=da_gcm.time.dt.month.isin(args.months))
-    da_rcm = da_rcm.sel(time=da_rcm.time.dt.month.isin(args.months))
-    da_obs = da_obs.sel(time=da_obs.time.dt.month.isin(args.months))
+    if args.months:
+        logger.info(f"Selecting months {args.months}")
+        da_gcm = da_gcm.sel(time=da_gcm.time.dt.month.isin(args.months))
+        da_rcm = da_rcm.sel(time=da_rcm.time.dt.month.isin(args.months))
+        da_obs = da_obs.sel(time=da_obs.time.dt.month.isin(args.months))
 
     #< Cut all dataarrays to the same domain
-    logger.info(f"Selecting domain")
-    da_gcm = da_gcm.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
-    da_rcm = da_rcm.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
-    da_obs = da_obs.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
-    if args.ifiles_mask:
-        mask = mask.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
+    if args.lat0!=-999 and args.lat1!=-999 and args.lon0!=-999 and args.lon1!=-999:
+        logger.info(f"Selecting domain")
+        da_gcm = da_gcm.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
+        da_rcm = da_rcm.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
+        da_obs = da_obs.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
+        if args.ifiles_mask:
+            mask = mask.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
 
     #< Do masking
     if args.ifiles_mask:

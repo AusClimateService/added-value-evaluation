@@ -658,7 +658,22 @@ def iclim_test(da, threshold=None):
     Returns:
         xarray datarray
     """
-    #< Calculate quantile
-    logger.info(f"Calculating how often below {threshold}")
-    X = xr.where(da<threshold, 1, 0).sum("time").load()
+    
+    #< Save da to a file so icclim can work on it
+    import uuid
+    tmp_file = "tmp_icclim.nc"
+    out_file = f"/scratch/tp28/cst565/{uuid.uuid4()}.nc"
+    name = da.name
+    logger.info(f"Saving dataset to {tmp_file}")
+    da.to_netcdf(tmp_file)
+    #< Run the file through icclim
+    logger.info(f"Running icclim on {tmp_file}")
+    import icclim
+    icclim.index(index_name="SU", in_files=tmp_file, var_name=name, out_file=out_file)
+    #< Open the icclim output file and return
+    logger.info(f"Open icclim output {out_file}")
+    X = xr.open_dataset(out_file)
+    X = X.mean("time").load()
+    print(X)
+
     return X
