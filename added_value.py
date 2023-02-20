@@ -37,11 +37,12 @@ def parse_arguments():
     parser.add_argument("--op-mask", dest='op_mask', nargs='?', type=str, default="", help="Operation to use for masking (e.g. larger, smaller")
 
     parser.add_argument("--process", dest='process', nargs='?', type=str, default="", help="Process to get added value for (e.g., quantile)")
-    parser.add_argument("--process_kwargs", dest='process_kwargs', nargs='?', type=json.loads, default="{}", help="Kwargs to pass to process function (e.g., \'{\"quantile\": 0.95}\' 0.95 for quantile)")
+    parser.add_argument("--process-kwargs", dest='process_kwargs', nargs='?', type=json.loads, default="{}", help="Kwargs to pass to process function (e.g., \'{\"quantile\": 0.95}\' 0.95 for quantile)")
     parser.add_argument("--distance-measure", dest='distance_measure', nargs='?', type=str, default="", help="Distance measure to use for AV calculation")
 
     parser.add_argument("--datestart", dest='datestart', nargs='?', type=str, default="", help="Start date of analysis period")
     parser.add_argument("--dateend", dest='dateend', nargs='?', type=str, default="", help="End date of analysis period")
+    parser.add_argument("--months", dest='months', nargs='*', type=int, default=[], help="Select only certain months (e.g. 12 1 2 for DJF")
 
     parser.add_argument("--ofile", dest='ofile', nargs='?', type=str, default="av.nc", help="Path and name of output file")
 
@@ -49,6 +50,8 @@ def parse_arguments():
     parser.add_argument("--lat1", dest='lat1', nargs='?', type=float, default=-999, help="Upper latitude to select")
     parser.add_argument("--lon0", dest='lon0', nargs='?', type=float, default=-999, help="Lower longitude to select")
     parser.add_argument("--lon1", dest='lon1', nargs='?', type=float, default=-999, help="Upper longitude to select")
+
+    parser.add_argument("--return-X", dest='return_X', nargs='?', type=lib.str2bool, default="False", help="Also return the regridded climate statistics")
 
     parser.add_argument("--nthreads", dest='nthreads', nargs='?', type=int, const='', default=1, help="Number of threads.")
     parser.add_argument("--nworkers", dest='nworkers', nargs='?', type=int, const='', default=2, help="Number of workers.")
@@ -59,7 +62,7 @@ def parse_arguments():
 
 
 
-def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_measure="AVrmse", mask=None):
+def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_measure="AVrmse", mask=None, return_X=False):
     """Calculate added value statistic from driving model (da_gcm), regional model (da_rcm) and reference (da_obs) dataarray
 
     Args:
@@ -70,6 +73,7 @@ def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_mea
         process_kwargs (dict): Kwargs to pass to "process" (e.g., {'quantile':0.95})
         measure (str): Distance measure to use for added value calculation
         mask (xarray dataarray): Array (with 0 & 1) used for masking.
+        write_X (bool): Should the regridded climate statistic be written out too?
 
     Returns:
         xarray dataset : Added value
@@ -107,7 +111,10 @@ def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_mea
     #< Convert av to a dataset
     av = av.to_dataset(name="av")
     #< Return
-    return av
+    if return_X:
+        return av, X_gcm, X_rcm, X_obs
+    else:
+        return av
 
 
 def main():
@@ -153,6 +160,12 @@ def main():
     da_rcm = da_rcm.sel(time=slice(args.datestart, args.dateend))
     da_obs = da_obs.sel(time=slice(args.datestart, args.dateend))
 
+    #< Select certain months
+    logger.info(f"Selecting months {args.months}")
+    da_gcm = da_gcm.sel(time=da_gcm.time.dt.month.isin(args.months))
+    da_rcm = da_rcm.sel(time=da_rcm.time.dt.month.isin(args.months))
+    da_obs = da_obs.sel(time=da_obs.time.dt.month.isin(args.months))
+
     #< Cut all dataarrays to the same domain
     logger.info(f"Selecting domain")
     da_gcm = da_gcm.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
@@ -175,11 +188,19 @@ def main():
             mask = xr.where(mask == args.value_mask, 1, 0)
 
     #< Calculate added value
-    av = added_value(da_gcm, da_rcm, da_obs, args.process, args.process_kwargs, distance_measure=args.distance_measure, mask=mask)
+    if args.return_X:
+        av, X_gcm, X_rcm, X_obs = added_value(da_gcm, da_rcm, da_obs, args.process, args.process_kwargs, distance_measure=args.distance_measure, mask=mask, return_X=args.return_X)
+    else:
+        av = added_value(da_gcm, da_rcm, da_obs, args.process, args.process_kwargs, distance_measure=args.distance_measure, mask=mask, return_X=args.return_X)
 
     #< Save added value to netcdf
     logger.info("Saving to netcdf")
     lib.write2nc(av, args.ofile, inlogs=inlogs)
+    if args.return_X:
+        lib.write2nc(X_gcm, args.ofile.replace(".nc", "_X_gcm.nc"), inlogs=inlogs)
+        lib.write2nc(X_rcm, args.ofile.replace(".nc", "_X_rcm.nc"), inlogs=inlogs)
+        lib.write2nc(X_obs, args.ofile.replace(".nc", "_X_obs.nc"), inlogs=inlogs)
+
 
     logger.debug(f"Done")
 

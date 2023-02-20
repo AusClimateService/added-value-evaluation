@@ -88,6 +88,19 @@ def rename_helper(ds, **kwargs):
     return ds
 
 
+def sel_helper(ds, **kwargs):
+    """
+    Helper to select coordinates in dataset.
+
+    :param ds: Input dataset
+    :return:   Renamed dataset
+    """
+    for key in kwargs:
+        if key in ds.coords:
+            ds = ds.sel({key:kwargs[key]})
+    return ds
+
+
 def strictly_increasing(L):
     """
     Check if input is strictly increasing.
@@ -159,6 +172,11 @@ def convert_units(ds):
                 ds[key] = ds[key] + 273.15
                 ds[key].attrs["units"] = "K"
                 logger.debug("Converting units from degrees_Celsius to K")
+        
+            elif ds[key].attrs["units"] == "kg m-2 s-1":
+                ds[key] = ds[key] * 86400
+                ds[key].attrs["units"] = "mm"
+                logger.debug("Converting units from kg m-2 s-1 to mm")
     return ds
 
 
@@ -611,4 +629,36 @@ def count_above_threshold(da, threshold=None):
     #< Calculate quantile
     logger.info(f"Calculating how often {threshold} is exceeded")
     X = xr.where(da>threshold, 1, 0).sum("time").load()
+    return X
+
+
+def count_below_threshold(da, threshold=None):
+    """Calculate the number of times a a value is below the threshold.
+
+    Args:
+        da (xarray dataarray): Input dataarray
+        threshold (float): Threshold to exceed
+
+    Returns:
+        xarray datarray
+    """
+    #< Calculate quantile
+    logger.info(f"Calculating how often below {threshold}")
+    X = xr.where(da<threshold, 1, 0).sum("time").load()
+    return X
+
+
+def iclim_test(da, threshold=None):
+    """Calculate the number of times a a value is below the threshold.
+
+    Args:
+        da (xarray dataarray): Input dataarray
+        threshold (float): Threshold to exceed
+
+    Returns:
+        xarray datarray
+    """
+    #< Calculate quantile
+    logger.info(f"Calculating how often below {threshold}")
+    X = xr.where(da<threshold, 1, 0).sum("time").load()
     return X
