@@ -221,8 +221,7 @@ def AVse(X_obs, X_gdd, X_rcm):
     with xr.set_options(keep_attrs=True):
         out = ((X_gdd-X_obs)**2) - ((X_rcm-X_obs)**2)
     return out
-
-
+    
 def AVse_norm(X_obs, X_gdd, X_rcm):
     """
     Calculate combined error of the GDD and RCM using the square error between the global
@@ -401,6 +400,31 @@ def AVse_frac(X_obs, X_gdd, X_rcm, thresh=0):
         av_frac = av_frac * 100
     return av_frac
 
+def PAVdiff(X_gdd, X_rcm):
+    """
+    Calculate the difference between the global driving model (gdd) and the regional climate model (rcm).
+    :param X_gdd: xarray containing the global driving data
+    :param X_rcm: xarray containing the regional climate model
+    :return:      xarray containting their difference for each grid-point
+    """
+
+    with xr.set_options(keep_attrs=True):
+        pav = X_gdd - X_rcm
+        
+    return pav
+
+def PAVdiff_rel(X_gdd, X_rcm):
+    """
+    Calculate the relative difference between the global driving model (gdd) and the regional climate model (rcm).
+    :param X_gdd: xarray containing the global driving data
+    :param X_rcm: xarray containing the regional climate model
+    :return:      xarray containting their relative difference for each grid-point
+    """
+
+    with xr.set_options(keep_attrs=True):
+        pav = 1 - X_gdd / X_rcm
+        
+    return pav
 
 def get_latlongrid_xr(ds):
     """
