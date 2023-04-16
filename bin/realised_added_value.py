@@ -53,9 +53,13 @@ def realised_added_value(da_av, da_pav, da_var):
     Returns:
         xarray dataset : Realised added value
     """
+    #< Regrid all varibility to the RCM resolution
+    logger.info(f"Regridding GCM data to RCM grid")
+    da_var = lib.regrid(da_var, da_av)
     #< Calculate realised added value
     logger.info(f"Calculating realised added value")
-    rav = da_av * da_pav / da_var
+    eps = 1e-12
+    rav = xr.where(da_var>eps, da_av * da_pav / da_var, np.nan)
     #< Convert av to a dataset
     rav = rav.to_dataset(name="rav")
     #< Return
@@ -92,7 +96,7 @@ def main():
     logger.info(f"Extracting variables from datasets")
     da_av = ds_av[args.varname_av]
     da_pav = ds_pav[args.varname_pav]
-    da_var = ds_obs[args.varname_var]
+    da_var = ds_var[args.varname_var]
 
     #< Calculate realised added value
     rav = realised_added_value(da_av, da_pav, da_var)

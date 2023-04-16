@@ -34,7 +34,7 @@ def parse_arguments():
 
     parser.add_argument("--process", dest='process', nargs='?', type=str, default="", help="Process to get added value for (e.g., quantile)")
     parser.add_argument("--process-kwargs", dest='process_kwargs', nargs='?', type=json.loads, default="{}", help="Kwargs to pass to process function (e.g., \'{\"quantile\": 0.95}\' 0.95 for quantile)")
-    parser.add_argument("--grouping", dest='grouping', nargs='?', type=str, default="", help="How to group (e.g., time.season)")
+    parser.add_argument("--grouping", dest='grouping', nargs='?', type=str, default="", const="", help="How to group (e.g., time.season)")
     parser.add_argument("--dim", dest='dim', nargs='?', type=str, default="", help="Dimension over which to calculate variance (e.g., time, year)")
 
     parser.add_argument("--datestart", dest='datestart', nargs='?', type=str, default="", help="Start date of analysis period")
@@ -104,6 +104,9 @@ def main():
         mask = lib.open_dataset(args.ifiles_mask)[args.varname_mask]
     else:
         mask = None
+    logger.debug("Input dataset looks like:")
+    logger.debug(ds)
+    logger.debug("----------------------------------------------")
 
     #< Get the history of the input files
     inlogs = {}
@@ -117,11 +120,15 @@ def main():
     #< Cut all dataarray to the time period
     logger.info(f"Selecting time period")
     da = da.sel(time=slice(args.datestart, args.dateend))
+    logger.debug(da)
+    logger.debug("----------------------------------------------")
 
     #< Select certain months
     if args.months:
         logger.info(f"Selecting months {args.months}")
         da = da.sel(time=da.time.dt.month.isin(args.months))
+        logger.debug(da)
+        logger.debug("----------------------------------------------")
 
     #< Cut all dataarrays to the same domain
     if args.lat0!=-999 and args.lat1!=-999 and args.lon0!=-999 and args.lon1!=-999:

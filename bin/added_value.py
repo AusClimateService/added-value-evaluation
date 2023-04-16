@@ -95,8 +95,12 @@ def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_mea
     #< Regrid all quantiles to the RCM resolution
     logger.info(f"Regridding GCM data to RCM grid")
     X_gcm = lib.regrid(X_gcm, X_rcm)
+    logger.debug(X_gcm)
+    logger.debug("---------------------------------------------")
     logger.info(f"Regridding obs data to RCM grid")
     X_obs = lib.regrid(X_obs, X_rcm)
+    logger.debug(X_obs)
+    logger.debug("---------------------------------------------")
     #< Calculate added value
     logger.info(f"Calculating added value using {distance_measure}")
     if hasattr(lib, distance_measure):
@@ -104,10 +108,15 @@ def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_mea
     else:
         assert False, f"Distance measure of {distance_measure} not implemented!"
     av = fun(X_obs, X_gcm, X_rcm)
+    logger.debug(av)
+    logger.debug("---------------------------------------------")
     #< Mask data
     if not mask is None:
+        logger.info("Masking added value.")
         mask = lib.regrid(mask, X_rcm, regrid_method="nearest_s2d")
         av = xr.where(mask, av, np.nan)
+        logger.debug(av)
+        logger.debug("---------------------------------------------")
     #< Convert av to a dataset
     av = av.to_dataset(name="av")
     #< Return
@@ -153,12 +162,20 @@ def main():
     da_gcm = ds_gcm[args.varname_gcm]
     da_rcm = ds_rcm[args.varname_rcm]
     da_obs = ds_obs[args.varname_obs]
+    logger.debug(da_gcm)
+    logger.debug(da_rcm)
+    logger.debug(da_obs)
+    logger.debug("---------------------------------------------")
 
     #< Cut all dataarrays to same time period
     logger.info(f"Selecting time period")
     da_gcm = da_gcm.sel(time=slice(args.datestart, args.dateend))
     da_rcm = da_rcm.sel(time=slice(args.datestart, args.dateend))
     da_obs = da_obs.sel(time=slice(args.datestart, args.dateend))
+    logger.debug(da_gcm)
+    logger.debug(da_rcm)
+    logger.debug(da_obs)
+    logger.debug("---------------------------------------------")
 
     #< Select certain months
     if args.months:
@@ -166,6 +183,10 @@ def main():
         da_gcm = da_gcm.sel(time=da_gcm.time.dt.month.isin(args.months))
         da_rcm = da_rcm.sel(time=da_rcm.time.dt.month.isin(args.months))
         da_obs = da_obs.sel(time=da_obs.time.dt.month.isin(args.months))
+        logger.debug(da_gcm)
+        logger.debug(da_rcm)
+        logger.debug(da_obs)
+        logger.debug("---------------------------------------------")
 
     #< Cut all dataarrays to the same domain
     if args.lat0!=-999 and args.lat1!=-999 and args.lon0!=-999 and args.lon1!=-999:
@@ -175,6 +196,10 @@ def main():
         da_obs = da_obs.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
         if args.ifiles_mask:
             mask = mask.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
+        logger.debug(da_gcm)
+        logger.debug(da_rcm)
+        logger.debug(da_obs)
+        logger.debug("---------------------------------------------")
 
     #< Do masking
     if args.ifiles_mask:
@@ -194,6 +219,8 @@ def main():
         av, X_gcm, X_rcm, X_obs = added_value(da_gcm, da_rcm, da_obs, args.process, args.process_kwargs, distance_measure=args.distance_measure, mask=mask, return_X=args.return_X)
     else:
         av = added_value(da_gcm, da_rcm, da_obs, args.process, args.process_kwargs, distance_measure=args.distance_measure, mask=mask, return_X=args.return_X)
+    logger.debug("Added values looks like:")
+    logger.debug(av)
 
     #< Save added value to netcdf
     logger.info("Saving to netcdf")
