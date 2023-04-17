@@ -120,22 +120,6 @@ def cmd_split(cmd, split=" "):
     return cmd_out
 
 
-def region_loader(region=""):
-    region_pairs = ""
-    if region:
-        region_dict = {
-            "land": {
-                "--ifiles-mask": "",
-                "--varname-mask": "",
-                "--value-mask": 1,
-                "--op-mask": "smaller"
-            }
-        }
-        region_pairs = [(key, region_dict[region][key]) for key in region_dict[region]]
-        region_pairs = " ".join("(%s,%s)" % tup for tup in region_pairs).replace("(","").replace(")","").replace(","," ")
-    return region_pairs
-
-
 def season_loader(season=""):
     season_pairs = ""
     if season:
@@ -160,8 +144,6 @@ def season_loader(season=""):
 
 
 def loop_av(args, gcm_files, rcm_files, obs_files, gcm_varname, rcm_varname, obs_varname, ofile):
-    #< Get the region
-    region_cmd = region_loader(region=args.region)
 
     #< Get the season
     season_cmd = season_loader(season=args.season)
@@ -170,7 +152,7 @@ def loop_av(args, gcm_files, rcm_files, obs_files, gcm_varname, rcm_varname, obs
     cmd = f"""
     python added_value.py --ifiles-gcm {' '.join(gcm_files)} --ifiles-rcm {' '.join(rcm_files)} --ifiles-obs {' '.join(obs_files)} 
     --varname-gcm {gcm_varname}  --varname-rcm {rcm_varname} --varname-obs {obs_varname} 
-    {region_cmd} 
+    --region {args.region} 
     {season_cmd} 
     --process {args.process} --process-kwargs {args.process_kwargs} --distance-measure {args.av_distance_measure}
     --datestart {args.datestart_hist} --dateend {args.dateend_hist}
@@ -186,8 +168,6 @@ def loop_av(args, gcm_files, rcm_files, obs_files, gcm_varname, rcm_varname, obs
 
 
 def loop_pav(args, gcm_files, rcm_files, gcm_varname, rcm_varname, ofile):
-    #< Get the region
-    region_cmd = region_loader(region=args.region)
 
     #< Get the season
     season_cmd = season_loader(season=args.season)
@@ -196,7 +176,7 @@ def loop_pav(args, gcm_files, rcm_files, gcm_varname, rcm_varname, ofile):
     cmd = f"""
     python potential_added_value.py --ifiles-gcm {' '.join(gcm_files)} --ifiles-rcm {' '.join(rcm_files)} 
     --varname-gcm {gcm_varname}  --varname-rcm {rcm_varname} 
-    {region_cmd} 
+    --region {args.region} 
     {season_cmd} 
     --process {args.process} --process-kwargs {args.process_kwargs} --distance-measure {args.pav_distance_measure}
     --datestart {args.datestart_fut} --dateend {args.dateend_fut}
@@ -212,8 +192,6 @@ def loop_pav(args, gcm_files, rcm_files, gcm_varname, rcm_varname, ofile):
 
 
 def loop_var(args, obs_files, obs_varname, ofile, grouping="", dim=""):
-    #< Get the region
-    region_cmd = region_loader(region=args.region)
 
     #< Get the season
     season_cmd = season_loader(season=args.season)
@@ -222,7 +200,7 @@ def loop_var(args, obs_files, obs_varname, ofile, grouping="", dim=""):
     cmd = f"""
     python variability.py --ifiles {' '.join(obs_files)} 
     --varname {obs_varname} 
-    {region_cmd} 
+    --region {args.region} 
     {season_cmd} 
     --process {args.process} --process-kwargs {args.process_kwargs}
     --grouping {grouping} --dim {dim}

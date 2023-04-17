@@ -15,6 +15,8 @@ import sys
 import warnings
 import lib
 import json
+import lib_spatial
+
 
 #< Get logger
 logger = lib.get_logger(__name__)
@@ -31,10 +33,7 @@ def parse_arguments():
     parser.add_argument("--varname-rcm", dest='varname_rcm', nargs='?', type=str, default="", help="Variable name in RCM files")
     parser.add_argument("--varname-obs", dest='varname_obs', nargs='?', type=str, default="", help="Variable name in reference files")
 
-    parser.add_argument("--ifiles-mask", dest='ifiles_mask', nargs='*', type=str, default=[], help="Input masking files")
-    parser.add_argument("--varname-mask", dest='varname_mask', nargs='?', type=str, default="", help="Variable name in masking files")
-    parser.add_argument("--value-mask", dest='value_mask', nargs='?', type=float, default=-999, help="Value to use for masking (e.g. larger than 0")
-    parser.add_argument("--op-mask", dest='op_mask', nargs='?', type=str, default="", help="Operation to use for masking (e.g. larger, smaller")
+    parser.add_argument("--region", dest='region', nargs='?', type=str, default="", help="Region masking using lib_spatial.py")
 
     parser.add_argument("--process", dest='process', nargs='?', type=str, default="", help="Process to get added value for (e.g., quantile)")
     parser.add_argument("--process-kwargs", dest='process_kwargs', nargs='?', type=json.loads, default="{}", help="Kwargs to pass to process function (e.g., \'{\"quantile\": 0.95}\' 0.95 for quantile)")
@@ -62,7 +61,7 @@ def parse_arguments():
 
 
 
-def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_measure="AVrmse", mask=None, return_X=False):
+def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_measure="AVrmse", region=None, return_X=False):
     """Calculate added value statistic from driving model (da_gcm), regional model (da_rcm) and reference (da_obs) dataarray
 
     Args:
@@ -72,7 +71,7 @@ def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_mea
         process (str): Process to calculate AV for (e.g., quantile)
         process_kwargs (dict): Kwargs to pass to "process" (e.g., {'quantile':0.95})
         measure (str): Distance measure to use for added value calculation
-        mask (xarray dataarray): Array (with 0 & 1) used for masking.
+        region (str): Region passed to lib_spatial.py for masking
         write_X (bool): Should the regridded climate statistic be written out too?
 
     Returns:
@@ -111,10 +110,9 @@ def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_mea
     logger.debug(av)
     logger.debug("---------------------------------------------")
     #< Mask data
-    if not mask is None:
+    if not region is None:
         logger.info("Masking added value.")
-        mask = lib.regrid(mask, X_rcm, regrid_method="nearest_s2d")
-        av = xr.where(mask, av, np.nan)
+        av = lib_spatial.apply_region_mask(av, args.region)
         logger.debug(av)
         logger.debug("---------------------------------------------")
     #< Convert av to a dataset
@@ -142,11 +140,6 @@ def main():
     logger.debug(ds_gcm)
     logger.debug(ds_rcm)
     logger.debug(ds_obs)
-    if args.ifiles_mask:
-        logger.info(f"Opening mask")
-        mask = lib.open_dataset(args.ifiles_mask)[args.varname_mask]
-    else:
-        mask = None
 
     #< Get the history of the input files
     inlogs = {}
@@ -194,31 +187,16 @@ def main():
         da_gcm = da_gcm.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
         da_rcm = da_rcm.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
         da_obs = da_obs.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
-        if args.ifiles_mask:
-            mask = mask.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
         logger.debug(da_gcm)
         logger.debug(da_rcm)
         logger.debug(da_obs)
         logger.debug("---------------------------------------------")
 
-    #< Do masking
-    if args.ifiles_mask:
-        if args.op_mask == "smallerthan":
-            mask = xr.where(mask <= args.value_mask, 1, 0)
-        elif args.op_mask == "smaller":
-            mask = xr.where(mask < args.value_mask, 1, 0)
-        elif args.op_mask == "largerthan":
-            mask = xr.where(mask >= args.value_mask, 1, 0)
-        elif args.op_mask == "larger":
-            mask = xr.where(mask > args.value_mask, 1, 0)
-        elif args.op_mask == "equal":
-            mask = xr.where(mask == args.value_mask, 1, 0)
-
     #< Calculate added value
     if args.return_X:
-        av, X_gcm, X_rcm, X_obs = added_value(da_gcm, da_rcm, da_obs, args.process, args.process_kwargs, distance_measure=args.distance_measure, mask=mask, return_X=args.return_X)
+        av, X_gcm, X_rcm, X_obs = added_value(da_gcm, da_rcm, da_obs, args.process, args.process_kwargs, distance_measure=args.distance_measure, region=args.region, return_X=args.return_X)
     else:
-        av = added_value(da_gcm, da_rcm, da_obs, args.process, args.process_kwargs, distance_measure=args.distance_measure, mask=mask, return_X=args.return_X)
+        av = added_value(da_gcm, da_rcm, da_obs, args.process, args.process_kwargs, distance_measure=args.distance_measure, region=args.region, return_X=args.return_X)
     logger.debug("Added values looks like:")
     logger.debug(av)
 

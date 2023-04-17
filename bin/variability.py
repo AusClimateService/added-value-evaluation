@@ -15,6 +15,7 @@ import sys
 import warnings
 import lib
 import json
+import lib_spatial
 
 #< Get logger
 logger = lib.get_logger(__name__)
@@ -27,10 +28,7 @@ def parse_arguments():
 
     parser.add_argument("--varname", dest='varname', nargs='?', type=str, default="", help="Variable name in GCM files")
 
-    parser.add_argument("--ifiles-mask", dest='ifiles_mask', nargs='*', type=str, default=[], help="Input masking files")
-    parser.add_argument("--varname-mask", dest='varname_mask', nargs='?', type=str, default="", help="Variable name in masking files")
-    parser.add_argument("--value-mask", dest='value_mask', nargs='?', type=float, default=-999, help="Value to use for masking (e.g. larger than 0")
-    parser.add_argument("--op-mask", dest='op_mask', nargs='?', type=str, default="", help="Operation to use for masking (e.g. larger, smaller")
+    parser.add_argument("--region", dest='region', nargs='?', type=str, default="", help="Region masking using lib_spatial.py")
 
     parser.add_argument("--process", dest='process', nargs='?', type=str, default="", help="Process to get added value for (e.g., quantile)")
     parser.add_argument("--process-kwargs", dest='process_kwargs', nargs='?', type=json.loads, default="{}", help="Kwargs to pass to process function (e.g., \'{\"quantile\": 0.95}\' 0.95 for quantile)")
@@ -57,7 +55,7 @@ def parse_arguments():
 
 
 
-def variability(da, process, process_kwargs={}, mask=None, grouping="", dim="time"):
+def variability(da, process, process_kwargs={}, grouping="", dim="time"):
     """Calculate added value statistic from driving model (da_gcm), regional model (da_rcm) and reference (da_obs) dataarray
 
     Args:
@@ -99,11 +97,6 @@ def main():
     logger.info(f"Opening dataset")
     ds = lib.open_dataset(args.ifiles)
     logger.debug(ds)
-    if args.ifiles_mask:
-        logger.info(f"Opening mask")
-        mask = lib.open_dataset(args.ifiles_mask)[args.varname_mask]
-    else:
-        mask = None
     logger.debug("Input dataset looks like:")
     logger.debug(ds)
     logger.debug("----------------------------------------------")
@@ -134,24 +127,13 @@ def main():
     if args.lat0!=-999 and args.lat1!=-999 and args.lon0!=-999 and args.lon1!=-999:
         logger.info(f"Selecting domain")
         da = da.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
-        if args.ifiles_mask:
-            mask = mask.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
 
-    #< Do masking
-    if args.ifiles_mask:
-        if args.op_mask == "smallerthan":
-            mask = xr.where(mask <= args.value_mask, 1, 0)
-        elif args.op_mask == "smaller":
-            mask = xr.where(mask < args.value_mask, 1, 0)
-        elif args.op_mask == "largerthan":
-            mask = xr.where(mask >= args.value_mask, 1, 0)
-        elif args.op_mask == "larger":
-            mask = xr.where(mask > args.value_mask, 1, 0)
-        elif args.op_mask == "equal":
-            mask = xr.where(mask == args.value_mask, 1, 0)
+    #< Mask data
+    if args.region:
+        da = lib_spatial.apply_region_mask(da, args.region)
 
     #< Calculate variability
-    var = variability(da, args.process, args.process_kwargs, mask=mask, grouping=args.grouping, dim=args.dim)
+    var = variability(da, args.process, args.process_kwargs, grouping=args.grouping, dim=args.dim)
 
     #< Save added value to netcdf
     logger.info("Saving to netcdf")

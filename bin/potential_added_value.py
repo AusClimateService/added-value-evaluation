@@ -15,6 +15,7 @@ import sys
 import warnings
 import lib
 import json
+import lib_spatial
 
 #< Get logger
 logger = lib.get_logger(__name__)
@@ -29,10 +30,7 @@ def parse_arguments():
     parser.add_argument("--varname-gcm", dest='varname_gcm', nargs='?', type=str, default="", help="Variable name in GCM files")
     parser.add_argument("--varname-rcm", dest='varname_rcm', nargs='?', type=str, default="", help="Variable name in RCM files")
 
-    parser.add_argument("--ifiles-mask", dest='ifiles_mask', nargs='*', type=str, default=[], help="Input masking files")
-    parser.add_argument("--varname-mask", dest='varname_mask', nargs='?', type=str, default="", help="Variable name in masking files")
-    parser.add_argument("--value-mask", dest='value_mask', nargs='?', type=float, default=-999, help="Value to use for masking (e.g. larger than 0")
-    parser.add_argument("--op-mask", dest='op_mask', nargs='?', type=str, default="", help="Operation to use for masking (e.g. larger, smaller")
+    parser.add_argument("--region", dest='region', nargs='?', type=str, default="", help="Region masking using lib_spatial.py")
 
     parser.add_argument("--process", dest='process', nargs='?', type=str, default="", help="Process to get added value for (e.g., quantile)")
     parser.add_argument("--process-kwargs", dest='process_kwargs', nargs='?', type=json.loads, default="{}", help="Kwargs to pass to process function (e.g., \'{\"quantile\": 0.95}\' 0.95 for quantile)")
@@ -61,7 +59,7 @@ def parse_arguments():
 
 
 
-def potential_added_value(da_gcm, da_rcm, process, process_kwargs={}, distance_measure="PAVdiff", mask=None, return_X=False):
+def potential_added_value(da_gcm, da_rcm, process, process_kwargs={}, distance_measure="PAVdiff", region=None, return_X=False):
     """Calculate potential added value statistic from driving model (da_gcm) and regional model (da_rcm) dataarray
 
     Args:
@@ -71,7 +69,7 @@ def potential_added_value(da_gcm, da_rcm, process, process_kwargs={}, distance_m
         process_kwargs (dict): Kwargs to pass to "process" (e.g., {'quantile':0.95})
         distance_measure (str): Distance measure to use for added value calculation. 
                                 The function needs to be defined in lib.py.
-        mask (xarray dataarray): Array (with 0 & 1) used for masking.
+        region (str): Use lib_spatial for masking.
         write_X (bool): Should the regridded climate statistic be written out too?
 
     Returns:
@@ -100,9 +98,8 @@ def potential_added_value(da_gcm, da_rcm, process, process_kwargs={}, distance_m
         assert False, f"Distance measure of {distance_measure} not implemented!"
     pav = fun(X_gcm, X_rcm)
     #< Mask data
-    if not mask is None:
-        mask = lib.regrid(mask, X_rcm, regrid_method="nearest_s2d")
-        pav = xr.where(mask, pav, np.nan)
+    if not region is None:
+        pav = lib_spatial.apply_region_mask(pav, region)
     #< Convert av to a dataset
     pav = pav.to_dataset(name="pav")
     #< Return
@@ -126,11 +123,6 @@ def main():
     ds_rcm = lib.open_dataset(args.ifiles_rcm)
     logger.debug(ds_gcm)
     logger.debug(ds_rcm)
-    if args.ifiles_mask:
-        logger.info(f"Opening mask")
-        mask = lib.open_dataset(args.ifiles_mask)[args.varname_mask]
-    else:
-        mask = None
 
     #< Get the history of the input files
     inlogs = {}
@@ -160,27 +152,12 @@ def main():
         logger.info(f"Selecting domain")
         da_gcm = da_gcm.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
         da_rcm = da_rcm.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
-        if args.ifiles_mask:
-            mask = mask.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
-
-    #< Do masking
-    if args.ifiles_mask:
-        if args.op_mask == "smallerthan":
-            mask = xr.where(mask <= args.value_mask, 1, 0)
-        elif args.op_mask == "smaller":
-            mask = xr.where(mask < args.value_mask, 1, 0)
-        elif args.op_mask == "largerthan":
-            mask = xr.where(mask >= args.value_mask, 1, 0)
-        elif args.op_mask == "larger":
-            mask = xr.where(mask > args.value_mask, 1, 0)
-        elif args.op_mask == "equal":
-            mask = xr.where(mask == args.value_mask, 1, 0)
 
     #< Calculate added value
     if args.return_X:
-        pav, X_gcm, X_rcm = potential_added_value(da_gcm, da_rcm, args.process, args.process_kwargs, distance_measure=args.distance_measure, mask=mask, return_X=args.return_X)
+        pav, X_gcm, X_rcm = potential_added_value(da_gcm, da_rcm, args.process, args.process_kwargs, distance_measure=args.distance_measure, region=args.region, return_X=args.return_X)
     else:
-        pav = potential_added_value(da_gcm, da_rcm, args.process, args.process_kwargs, distance_measure=args.distance_measure, mask=mask, return_X=args.return_X)
+        pav = potential_added_value(da_gcm, da_rcm, args.process, args.process_kwargs, distance_measure=args.distance_measure, region=args.region, return_X=args.return_X)
 
     #< Save added value to netcdf
     logger.info("Saving to netcdf")
