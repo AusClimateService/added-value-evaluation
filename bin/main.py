@@ -18,6 +18,7 @@ import json
 import cmip6_interface
 import barpa_drs_interface
 import agcd_interface
+import ccam_drs_interface
 from subprocess import Popen, PIPE
 
 
@@ -80,6 +81,18 @@ def rcm_model_loader(gcm, rcm, scen, freq, var):
             "ACCESS-CM2": "CSIRO-ARCCSS-ACCESS-CM2",
         }
         return barpa_drs_interface.get_barpa_files(barpa_name_dict[gcm], scen, freq, var), var
+    else if rcm == "CCAM":
+        ccam_name_dict = {
+            "ERA5": "ECMWF-ERA5",
+            "ACCESS-CM2": "CSIRO-ARCCSS-ACCESS-CM2",
+            "ACCESS-ESM1-5": "CSIRO-ACCESS-ESM1-5",
+            "EC-Earth3": "EC-Earth-Consortium-EC-Earth3",
+            "CESM2": "NCAR-CESM2",
+            "CMCC-ESM2": "CMCC-CMCC-ESM2",
+            "CNRM-ESM2-1": "CNRM-CERFACS-CNRM-ESM2-1",
+            "NorESM2-MM": "NCC-NorESM2-MM",
+        }
+        return ccam_drs_interface.get_ccam_files(ccam_name_dict[gcm], scen, freq, var), var
     else:
         logger.error(f"RCM {rcm} is not implemented!")
         exit(1)
