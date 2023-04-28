@@ -83,7 +83,7 @@ def rcm_model_loader(gcm, rcm, scen, freq, var):
             "NorESM2-MM": "NCC-NorESM2-MM",
         }
         return barpa_drs_interface.get_barpa_files(barpa_name_dict[gcm], scen, freq, var), var
-    else if rcm == "CCAM":
+    elif rcm == "CCAM":
         ccam_name_dict = {
             "ERA5": "ECMWF-ERA5",
             "ACCESS-CM2": "CSIRO-ARCCSS-ACCESS-CM2",
