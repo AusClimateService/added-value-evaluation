@@ -126,7 +126,7 @@ def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_mea
 
 def main():
     # Load the logger
-    logger.info(f"Start")
+    logger.info(f"Start {sys.argv[0]}")
 
     #< Get user arguments
     parser = parse_arguments()
@@ -209,7 +209,7 @@ def main():
         lib.write2nc(X_obs, args.ofile.replace(".nc", "_X_obs.nc"), inlogs=inlogs)
 
 
-    logger.debug(f"Done")
+    logger.info(f"Done")
 
 
     

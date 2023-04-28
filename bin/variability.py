@@ -87,7 +87,7 @@ def variability(da, process, process_kwargs={}, grouping="", dim="time"):
 
 def main():
     # Load the logger
-    logger.info(f"Start")
+    logger.info(f"Start {sys.argv[0]}")
 
     #< Get user arguments
     parser = parse_arguments()

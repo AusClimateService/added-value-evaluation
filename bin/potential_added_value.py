@@ -111,7 +111,7 @@ def potential_added_value(da_gcm, da_rcm, process, process_kwargs={}, distance_m
 
 def main():
     # Load the logger
-    logger.info(f"Start")
+    logger.info(f"Start {sys.argv[0]}")
 
     #< Get user arguments
     parser = parse_arguments()
@@ -167,7 +167,7 @@ def main():
         lib.write2nc(X_rcm, args.ofile.replace(".nc", "_X_rcm.nc"), inlogs=inlogs)
 
 
-    logger.debug(f"Done")
+    logger.info(f"Done")
 
 
     

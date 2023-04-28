@@ -79,6 +79,8 @@ def rcm_model_loader(gcm, rcm, scen, freq, var):
             "ERA5": "ECMWF-ERA5",
             "ACCESS-ESM1-5": "CSIRO-ACCESS-ESM1-5",
             "ACCESS-CM2": "CSIRO-ARCCSS-ACCESS-CM2",
+            "EC-Earth3": "EC-Earth-Consortium-EC-Earth3",
+            "NorESM2-MM": "NCC-NorESM2-MM",
         }
         return barpa_drs_interface.get_barpa_files(barpa_name_dict[gcm], scen, freq, var), var
     else if rcm == "CCAM":
@@ -105,6 +107,8 @@ def ref_loader(obs, freq, var):
         }
         agcd_varname_dict = {
             "tasmax": "tmax",
+            "tasmin": "tmin",
+            "pr": "precip",
         }
         subversion='total' if var == 'pr' else "mean"
         return agcd_interface.get_files(agcd_freq_dict[freq], agcd_varname_dict[var], subversion=subversion), agcd_varname_dict[var]
@@ -270,7 +274,7 @@ def get_ofile(odir="./", measure="", variable="", gcm="", scenario="", rcm="", o
 
 def main():
     # Load the logger
-    logger.info(f"Start")
+    logger.info(f"Start {sys.argv[0]}")
 
     #< Get user arguments
     parser = parse_arguments()
