@@ -647,7 +647,10 @@ def quantile(da, quantile=None):
     """
     #< Re-chunk the data because quantiles cannot be calculated over chunked dimensions
     logger.info(f"Re-chunking data")
-    da = da.chunk({"time":-1, "lat":"auto"})
+    if 'lat' in da.dims:
+        da = da.chunk({"time":-1, "lat":"auto"})
+    else:
+        da = da.chunk({"time":-1})
     #< Calculate quantile
     logger.info(f"Calculating {quantile*100}th quantile")
     X = da.quantile(quantile,"time", skipna=True).load()
