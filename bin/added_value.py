@@ -53,7 +53,7 @@ def parse_arguments():
     parser.add_argument("--lon1", dest='lon1', nargs='?', type=float, default=-999, help="Upper longitude to select")
 
     parser.add_argument("--return-X", dest='return_X', action='store_true', help="Also return the regridded climate statistics")
-    parser.add_argument("--stations", dest='stations', default="False", action='store_true',help="Obs data is point-based station data")
+    parser.add_argument("--stations", dest='stations', default=False, action='store_true',help="Obs data is point-based station data")
 
     parser.add_argument("--nthreads", dest='nthreads', nargs='?', type=int, const='', default=1, help="Number of threads.")
     parser.add_argument("--nworkers", dest='nworkers', nargs='?', type=int, const='', default=2, help="Number of workers.")
@@ -204,6 +204,7 @@ def main():
         logger.debug("---------------------------------------------")
 
     if args.stations:
+        print(args.stations,'stations')
         # extract data from nearest points to stations
         lon = da_obs.lon
         lat = da_obs.lat
@@ -228,7 +229,7 @@ def main():
     if args.return_X:
         av, X_gcm, X_rcm, X_obs = added_value(da_gcm, da_rcm, da_obs, args.process, args.process_kwargs, distance_measure=args.distance_measure, region=args.region, return_X=args.return_X, agcd_mask=args.agcd_mask, stations=args.stations)
     else:
-        av = added_value(da_gcm, da_rcm, da_obs, args.process, args.process_kwargs, distance_measure=args.distance_measure, regions=args.region, return_X=args.return_X, agcd_mask=args.agcd_mask, stations=args.stations)
+        av = added_value(da_gcm, da_rcm, da_obs, args.process, args.process_kwargs, distance_measure=args.distance_measure, region=args.region, return_X=args.return_X, agcd_mask=args.agcd_mask, stations=args.stations)
     logger.debug("Added values looks like:")
     logger.debug(av)
 
