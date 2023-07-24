@@ -428,6 +428,18 @@ def PAVdiff_rel(X_gdd, X_rcm):
         
     return pav
 
+def PAVcorr(X_gdd, X_rcm):
+    """
+    Calculate difference in terms of spatial correlation between the driving model (gdd) and the regional climate model (rcm).
+
+    :param X_gdd: xarray containing the global driving data
+    :param X_rcm: xarray containing the regional climate model
+    :return:      xarray containting the AV (corr) for each grid-point
+    """
+    with xr.set_options(keep_attrs=True):
+        out = (1-xr.corr(X_gdd, X_rcm, dim=['lat','lon']))
+    return out
+
 def get_latlongrid_xr(ds):
     """
     Get lan/lon grid from input dataset.
@@ -643,7 +655,10 @@ def quantile(da, quantile=None):
     """
     #< Re-chunk the data because quantiles cannot be calculated over chunked dimensions
     logger.info(f"Re-chunking data")
-    da = da.chunk({"time":-1, "lat":"auto"})
+    if 'lat' in da.dims:
+        da = da.chunk({"time":-1, "lat":"auto"})
+    else:
+        da = da.chunk({"time":-1})
     #< Calculate quantile
     logger.info(f"Calculating {quantile*100}th quantile")
     X = da.quantile(quantile,"time", skipna=True).load()

@@ -20,6 +20,7 @@ import cmip6_interface
 import era5_interface
 import barpa_drs_interface
 import agcd_interface
+import ccam_drs_interface
 from subprocess import Popen, PIPE
 
 
@@ -40,7 +41,7 @@ def parse_arguments():
     parser.add_argument("--regions", dest='regions', nargs='*', type=str, default=[], help="Regions to select")
     parser.add_argument("--seasons", dest='seasons', nargs='*', type=str, default=[], help="Seasons to select")
     parser.add_argument("--odir", dest='odir', nargs='?', type=str, default=".", help="Output directory")
-    parser.add_argument("--overwrite", dest='overwrite', nargs='?', type=lib.str2bool, default="False", help="Overwrite existing files.")
+    parser.add_argument("--overwrite", dest='overwrite',  action='store_true', help="Overwrite existing files.")
 
     parser.add_argument("--av-measures", dest='av_measures', nargs='+', type=str, default="", choices=["added_value", "potential_added_value", "realised_added_value", "variability", "added_value_norm"], help="Calculate added_value, potential_added_value, realised_added_value or variability")
     parser.add_argument("--process", dest='process', nargs='?', type=str, default="", help="Process to get added value for (e.g., quantile)")
@@ -59,7 +60,8 @@ def parse_arguments():
     parser.add_argument("--lon0", dest='lon0', nargs='?', type=float, default=-999, help="Lower longitude to select")
     parser.add_argument("--lon1", dest='lon1', nargs='?', type=float, default=-999, help="Upper longitude to select")
 
-    parser.add_argument("--return-X", dest='return_X', nargs='?', type=lib.str2bool, default="False", help="Also return the regridded climate statistics")
+    parser.add_argument("--return-X", dest='return_X', action='store_true', help="Also return the regridded climate statistics")
+    parser.add_argument("--agcd_mask", dest='agcd_mask', action='store_true', help='Whether to apply masking for AGCD precipitation data')
 
     parser.add_argument("--nthreads", dest='nthreads', nargs='?', type=int, const='', default=1, help="Number of threads.")
     parser.add_argument("--nworkers", dest='nworkers', nargs='?', type=int, const='', default=2, help="Number of workers.")
@@ -104,6 +106,18 @@ def rcm_model_loader(gcm, rcm, scen, freq, var):
         if gcm == "ERA5":
             scen = "evaluation"
         return barpa_drs_interface.get_barpa_files(barpa_name_dict[gcm], scen, freq, var), var
+    elif rcm == "CCAM":
+        ccam_name_dict = {
+            "ERA5": "ECMWF-ERA5",
+            "ACCESS-CM2": "CSIRO-ARCCSS-ACCESS-CM2",
+            "ACCESS-ESM1-5": "CSIRO-ACCESS-ESM1-5",
+            "EC-Earth3": "EC-Earth-Consortium-EC-Earth3",
+            "CESM2": "NCAR-CESM2",
+            "CMCC-ESM2": "CMCC-CMCC-ESM2",
+            "CNRM-ESM2-1": "CNRM-CERFACS-CNRM-ESM2-1",
+            "NorESM2-MM": "NCC-NorESM2-MM",
+        }
+        return ccam_drs_interface.get_ccam_files(ccam_name_dict[gcm], scen, freq, var), var
     else:
         logger.error(f"RCM {rcm} is not implemented!")
         exit(1)
@@ -169,7 +183,7 @@ def season_loader(season=""):
     return season_pairs
 
 
-def loop_av(args, gcm_files, rcm_files, obs_files, gcm_varname, rcm_varname, obs_varname, ofile):
+def loop_av(args, gcm_files, rcm_files, obs_files, gcm_varname, rcm_varname, obs_varname, ofile, return_X=False, agcd_mask=False):
 
     #< Get the season
     season_cmd = season_loader(season=args.season)
@@ -187,20 +201,19 @@ def loop_av(args, gcm_files, rcm_files, obs_files, gcm_varname, rcm_varname, obs
     --lon0 {args.lon0} --lon1 {args.lon1}
     --ofile {ofile}
     --log-level {args.loglevel}
-    --return-X False
     """
 
-    if obs_varname == "precip":
-        cmd = cmd + """
-    --ifile-obs-premask /g/data/tp28/cst565/ACS_added_value/agcd_mask_0p8_larger1_1mask_0nomask.nc
-    --varname-obs-premask mask
-    """
+    if agcd_mask:
+        cmd += " --agcd_mask"
+    if return_X:
+        cmd += " --return_X"
+        
     cmd = cmd_split(cmd)
     logger.debug(cmd)
     return Popen(cmd)
 
 
-def loop_av_norm(args, ofile_av, ofile_var, av_varname, var_varname, ofile):
+def loop_av_norm(args, ofile_av, ofile_var, av_varname, var_varname, ofile, return_X=False, agcd_mask=False):
     #< Get the cmd command
     cmd = f"""
     python added_value_norm.py --ifile-av {ofile_av} --ifile-var {ofile_var} 
@@ -209,13 +222,19 @@ def loop_av_norm(args, ofile_av, ofile_var, av_varname, var_varname, ofile):
     --ofile {ofile}
     --log-level {args.loglevel}
     """
+
+    if agcd_mask:
+        cmd += " --agcd_mask"
+    if return_X:
+        cmd += " --return_X"
+
     cmd = cmd_split(cmd)
     logger.debug(cmd)
     return Popen(cmd)
 
 
-def loop_pav(args, gcm_hist_files, gcm_fut_files, rcm_hist_files, rcm_fut_files, gcm_varname, rcm_varname, ofile):
 
+def loop_pav(args, gcm_hist_files, gcm_fut_files, rcm_hist_files, rcm_fut_files, gcm_varname, rcm_varname, ofile, return_X=False, agcd_mask=False):
     #< Get the season
     season_cmd = season_loader(season=args.season)
 
@@ -235,6 +254,12 @@ def loop_pav(args, gcm_hist_files, gcm_fut_files, rcm_hist_files, rcm_fut_files,
     --ofile {ofile}
     --log-level {args.loglevel}
     """
+
+    if agcd_mask:
+        cmd += " --agcd_mask"
+    if return_X:
+        cmd += " --return_X"
+
     cmd = cmd_split(cmd)
     logger.debug(cmd)
     return Popen(cmd)
@@ -360,7 +385,7 @@ def main():
                 #< Check if we need to calculate AV
                 if (av_measure == "added_value" or av_measure == "realised_added_value" or av_measure == "added_value_norm") and (not os.path.isfile(ofile_av) or args.overwrite):
                     #< Collect processes
-                    processes.append( loop_av(args, gcm_files_hist, rcm_files_hist, obs_files, gcm_varname, rcm_varname, obs_varname, ofile_av) )
+                    processes.append( loop_av(args, gcm_files_hist, rcm_files_hist, obs_files, gcm_varname, rcm_varname, obs_varname, ofile_av, return_X=args.return_X, agcd_mask=args.agcd_mask) )
                 #< Check if processes are to be triggered
                 check_processes(processes, args)
 
@@ -375,7 +400,7 @@ def main():
                 #< Check if we need to calculate PAV
                 if (av_measure == "potential_added_value" or av_measure == "realised_added_value") and (not os.path.isfile(ofile_pav) or args.overwrite):
                     #< Collect processes
-                    processes.append( loop_pav(args, gcm_files_hist, gcm_files_fut, rcm_files_hist, rcm_files_fut, gcm_varname, rcm_varname, ofile_pav) )
+                    processes.append( loop_pav(args, gcm_files_hist, gcm_files_fut, rcm_files_hist, rcm_files_fut, gcm_varname, rcm_varname, ofile_pav, return_X=args.return_X, agcd_mask=args.agcd_mask) )
                 #< Check if processes are to be triggered
                 check_processes(processes, args)
 

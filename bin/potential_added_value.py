@@ -35,6 +35,8 @@ def parse_arguments():
 
     parser.add_argument("--region", dest='region', nargs='?', type=str, default="", help="Region masking using lib_spatial.py")
 
+    parser.add_argument("--agcd_mask", dest='agcd_mask', action='store_true', help='Whether to apply masking for AGCD precipitation data')
+
     parser.add_argument("--process", dest='process', nargs='?', type=str, default="", help="Process to get added value for (e.g., quantile)")
     parser.add_argument("--process-kwargs", dest='process_kwargs', nargs='?', type=json.loads, default="{}", help="Kwargs to pass to process function (e.g., \'{\"quantile\": 0.95}\' 0.95 for quantile)")
     parser.add_argument("--distance-measure", dest='distance_measure', nargs='?', type=str, default="", help="Distance measure to use for PAV calculation, either PAVdiff or PAVdiff_rel")
@@ -53,7 +55,7 @@ def parse_arguments():
     parser.add_argument("--lon0", dest='lon0', nargs='?', type=float, default=-999, help="Lower longitude to select")
     parser.add_argument("--lon1", dest='lon1', nargs='?', type=float, default=-999, help="Upper longitude to select")
 
-    parser.add_argument("--return-X", dest='return_X', nargs='?', type=lib.str2bool, default="False", help="Also return the regridded climate statistics")
+    parser.add_argument("--return-X", dest='return_X', action='store_true', help="Also return the regridded climate statistics")
 
     parser.add_argument("--nthreads", dest='nthreads', nargs='?', type=int, const='', default=1, help="Number of threads.")
     parser.add_argument("--nworkers", dest='nworkers', nargs='?', type=int, const='', default=2, help="Number of workers.")
@@ -64,7 +66,7 @@ def parse_arguments():
 
 
 
-def potential_added_value(da_gcm_hist, da_gcm_fut, da_rcm_hist, da_rcm_fut, process, process_kwargs={}, distance_measure="PAVdiff", region=None, return_X=False):
+def potential_added_value(da_gcm_hist, da_gcm_fut, da_rcm_hist, da_rcm_fut, process, process_kwargs={}, distance_measure="PAVdiff", region=None, return_X=False, agcd_mask=False):
     """Calculate potential added value statistic from driving model (da_gcm) and regional model (da_rcm) dataarray
 
     Args:
@@ -78,6 +80,7 @@ def potential_added_value(da_gcm_hist, da_gcm_fut, da_rcm_hist, da_rcm_fut, proc
                                 The function needs to be defined in lib.py.
         region (str): Use lib_spatial for masking.
         write_X (bool): Should the regridded climate statistic be written out too?
+        agcd_mask (bool): Apply AGCD mask based on AGCD precip data
 
     Returns:
         xarray dataset : Added value
@@ -104,6 +107,18 @@ def potential_added_value(da_gcm_hist, da_gcm_fut, da_rcm_hist, da_rcm_fut, proc
     #< Regrid all quantiles to the RCM resolution
     logger.info(f"Regridding GCM data to RCM grid")
     X_gcm = lib.regrid(X_gcm, X_rcm)
+    #< Mask data
+    if not region is None:
+        logger.info("Masking X_gcm.")
+        X_gcm = lib_spatial.apply_region_mask(X_gcm, region)
+        logger.info("Masking X_rcm.")
+        X_rcm = lib_spatial.apply_region_mask(X_rcm, region)
+    #< AGCD mask
+    if agcd_mask:
+        logger.info("Masking X_gcm with AGCD mask")
+        X_gcm = lib_spatial.apply_agcd_data_mask(X_gcm)
+        logger.info("Masking X_rcm with AGCD mask")
+        X_rcm = lib_spatial.apply_agcd_data_mask(X_rcm)
     #< Calculate added value
     logger.info(f"Calculating potential added value using {distance_measure}")
     if hasattr(lib, distance_measure):
@@ -185,9 +200,9 @@ def main():
 
     #< Calculate added value
     if args.return_X:
-        pav, X_gcm, X_rcm = potential_added_value(da_gcm_hist, da_gcm_fut, da_rcm_hist, da_rcm_fut, args.process, args.process_kwargs, distance_measure=args.distance_measure, region=args.region, return_X=args.return_X)
+        pav, X_gcm, X_rcm = potential_added_value(da_gcm_hist, da_gcm_fut, da_rcm_hist, da_rcm_fut, args.process, args.process_kwargs, distance_measure=args.distance_measure, region=args.region, return_X=args.return_X, agcd_mask=args.agcd_mask)
     else:
-        pav = potential_added_value(da_gcm_hist, da_gcm_fut, da_rcm_hist, da_rcm_fut, args.process, args.process_kwargs, distance_measure=args.distance_measure, region=args.region, return_X=args.return_X)
+        pav = potential_added_value(da_gcm_hist, da_gcm_fut, da_rcm_hist, da_rcm_fut, args.process, args.process_kwargs, distance_measure=args.distance_measure, region=args.region, return_X=args.return_X, agcd_mask=args.agcd_mask)
 
     #< Save added value to netcdf
     logger.info("Saving to netcdf")

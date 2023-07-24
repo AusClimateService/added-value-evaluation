@@ -28,10 +28,8 @@ def parse_arguments():
     parser.add_argument("--ifiles", dest='ifiles', nargs='*', type=str, default=[], help="Input reference files")
     parser.add_argument("--varname", dest='varname', nargs='?', type=str, default="", help="Variable name in reference files")
 
-    parser.add_argument("--ifile-mask", dest='ifile_mask', nargs='?', type=str, default="", help="Input reference mask file (boolean mask; True=Mask)")
-    parser.add_argument("--varname-mask", dest='varname_mask', nargs='?', type=str, default="", help="Variable name in reference mask file")
-
     parser.add_argument("--region", dest='region', nargs='?', type=str, default="", help="Region masking using lib_spatial.py")
+    parser.add_argument("--agcd_mask", dest='agcd_mask', action='store_true', help='Whether to apply masking for AGCD precipitation data')
 
     parser.add_argument("--process", dest='process', nargs='?', type=str, default="", help="Process to get added value for (e.g., quantile)")
     parser.add_argument("--process-kwargs", dest='process_kwargs', nargs='?', type=json.loads, default="{}", help="Kwargs to pass to process function (e.g., \'{\"quantile\": 0.95}\' 0.95 for quantile)")
@@ -58,19 +56,24 @@ def parse_arguments():
 
 
 
-def variability(da, process, process_kwargs={}, grouping="", dim="time"):
+def variability(da, process, process_kwargs={}, grouping="", dim="time", agcd_mask=False):
     """Calculate added value statistic from driving model (da_gcm), regional model (da_rcm) and reference (da_obs) dataarray
 
     Args:
         da (xarray dataarray): Data to calculate variability for
         process (str): Process to calculate variability for (e.g., quantile)
         process_kwargs (dict): Kwargs to pass to "process" (e.g., {'quantile':0.95})
-        mask (xarray dataarray): Array (with 0 & 1) used for masking.
+        agcd_mask (bool): Apply AGCD mask based on AGCD precip data
         grouping (str): The grouping to use (e.g., time.year)
 
     Returns:
         xarray dataset : Variability
     """
+    #< AGCD mask
+    if agcd_mask:
+        logger.info("Masking with AGCD mask")
+        da = lib_spatial.apply_agcd_data_mask(da)
+
     #< Search for "process" function in library
     if hasattr(lib, process):
         fun = getattr(lib, process)
@@ -112,14 +115,7 @@ def main():
     #< Fetch variable from dataset
     logger.info(f"Extracting variable from dataset")
     da = ds[args.varname]
-
-    #< Masking
-    if args.ifile_mask:
-        mask = lib.open_dataset(args.ifile_mask)[args.varname_mask]
-        logger.debug("Found this dataarray for masking the reference input:")
-        logger.debug(mask)
-        with xr.set_options(keep_attrs=True):
-            da = da.where(~mask.astype(bool))
+    
 
     #< Cut all dataarray to the time period
     logger.info(f"Selecting time period")
@@ -144,7 +140,7 @@ def main():
         da = lib_spatial.apply_region_mask(da, args.region.replace("_", " "))
 
     #< Calculate variability
-    var = variability(da, args.process, args.process_kwargs, grouping=args.grouping, dim=args.dim)
+    var = variability(da, args.process, args.process_kwargs, grouping=args.grouping, dim=args.dim, agcd_mask=args.agcd_mask)
 
     #< Save added value to netcdf
     logger.info("Saving to netcdf")
