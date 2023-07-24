@@ -1,4 +1,3 @@
-import glob
 import numpy as np
 import xarray as xr
 import pandas as pd
@@ -17,7 +16,6 @@ import warnings
 import lib
 import json
 import cmip6_interface
-import era5_interface
 import barpa_drs_interface
 import agcd_interface
 from subprocess import Popen, PIPE
@@ -42,7 +40,7 @@ def parse_arguments():
     parser.add_argument("--odir", dest='odir', nargs='?', type=str, default=".", help="Output directory")
     parser.add_argument("--overwrite", dest='overwrite', nargs='?', type=lib.str2bool, default="False", help="Overwrite existing files.")
 
-    parser.add_argument("--av-measures", dest='av_measures', nargs='+', type=str, default="", choices=["added_value", "potential_added_value", "realised_added_value", "variability", "added_value_norm"], help="Calculate added_value, potential_added_value, realised_added_value or variability")
+    parser.add_argument("--av-measures", dest='av_measures', nargs='+', type=str, default="", choices=["added_value", "potential_added_value", "realised_added_value", "variability"], help="Calculate added_value, potential_added_value, realised_added_value or variability")
     parser.add_argument("--process", dest='process', nargs='?', type=str, default="", help="Process to get added value for (e.g., quantile)")
     parser.add_argument("--process-kwargs", dest='process_kwargs', nargs='?', type=str, default="{}", help="Kwargs to pass to process function (e.g., \'{\"quantile\": 0.95}\' 0.95 for quantile)")
     parser.add_argument("--av-distance-measure", dest='av_distance_measure', nargs='?', type=str, default="", help="Distance measure to use for AV calculation")
@@ -71,23 +69,7 @@ def parse_arguments():
 
 
 def driving_model_loader(gcm, scen, freq, var):
-    if gcm in ["ACCESS-ESM1-5", "ACCESS-CM2", "EC-Earth3", "NorESM2-MM", "CMCC-ESM2", "CESM2"]:
-        return cmip6_interface.get_cmip6_files(gcm, scen, freq, var), var
-    elif gcm in ["ERA5"]:
-        era5_varname_dict = {
-            "tasmax": "tas",
-            "tasmin": "tas",
-            "pr": "pr",
-        }
-        era5_filenmame_dict = {
-            "tasmax": "tasmax",
-            "tasmin": "tasmin",
-            "pr": "prmean",
-        }
-        file_list = glob.glob(f"/g/data/tp28/ERA5/{era5_filenmame_dict[var]}_era5_oper_sfc_*.nc")
-        return file_list, era5_varname_dict[var]
-    else:
-        raise Exception(f"Driving model {gcm} for {scen} not found!")
+    return cmip6_interface.get_cmip6_files(gcm, scen, freq, var), var
 
 
 def rcm_model_loader(gcm, rcm, scen, freq, var):
@@ -98,11 +80,7 @@ def rcm_model_loader(gcm, rcm, scen, freq, var):
             "ACCESS-CM2": "CSIRO-ARCCSS-ACCESS-CM2",
             "EC-Earth3": "EC-Earth-Consortium-EC-Earth3",
             "NorESM2-MM": "NCC-NorESM2-MM",
-            "CMCC-ESM2": "CMCC-CMCC-ESM2",
-            "CESM2": "NCAR-CESM2",
         }
-        if gcm == "ERA5":
-            scen = "evaluation"
         return barpa_drs_interface.get_barpa_files(barpa_name_dict[gcm], scen, freq, var), var
     else:
         logger.error(f"RCM {rcm} is not implemented!")
@@ -187,48 +165,25 @@ def loop_av(args, gcm_files, rcm_files, obs_files, gcm_varname, rcm_varname, obs
     --lon0 {args.lon0} --lon1 {args.lon1}
     --ofile {ofile}
     --log-level {args.loglevel}
-    --return-X False
-    """
-
-    if obs_varname == "precip":
-        cmd = cmd + """
-    --ifile-obs-premask /g/data/tp28/cst565/ACS_added_value/agcd_mask_0p8_larger1_1mask_0nomask.nc
-    --varname-obs-premask mask
     """
     cmd = cmd_split(cmd)
     logger.debug(cmd)
     return Popen(cmd)
 
 
-def loop_av_norm(args, ofile_av, ofile_var, av_varname, var_varname, ofile):
-    #< Get the cmd command
-    cmd = f"""
-    python added_value_norm.py --ifile-av {ofile_av} --ifile-var {ofile_var} 
-    --varname-av {av_varname} --varname-var {var_varname} 
-    --nworkers {args.nworkers} --nthreads {args.nthreads}
-    --ofile {ofile}
-    --log-level {args.loglevel}
-    """
-    cmd = cmd_split(cmd)
-    logger.debug(cmd)
-    return Popen(cmd)
-
-
-def loop_pav(args, gcm_hist_files, gcm_fut_files, rcm_hist_files, rcm_fut_files, gcm_varname, rcm_varname, ofile):
+def loop_pav(args, gcm_files, rcm_files, gcm_varname, rcm_varname, ofile):
 
     #< Get the season
     season_cmd = season_loader(season=args.season)
 
     #< Get the cmd command
     cmd = f"""
-    python potential_added_value.py --ifiles-gcm-hist {' '.join(gcm_hist_files)} --ifiles-rcm-hist {' '.join(rcm_hist_files)} 
-    --ifiles-gcm-fut {' '.join(gcm_fut_files)} --ifiles-rcm-fut {' '.join(rcm_fut_files)} 
+    python potential_added_value.py --ifiles-gcm {' '.join(gcm_files)} --ifiles-rcm {' '.join(rcm_files)} 
     --varname-gcm {gcm_varname}  --varname-rcm {rcm_varname} 
     --region {args.region} 
     {season_cmd} 
     --process {args.process} --process-kwargs {args.process_kwargs} --distance-measure {args.pav_distance_measure}
-    --datestart-hist {args.datestart_hist} --dateend-hist {args.dateend_hist}
-    --datestart-fut {args.datestart_fut} --dateend-fut {args.dateend_fut}
+    --datestart {args.datestart_fut} --dateend {args.dateend_fut}
     --nworkers {args.nworkers} --nthreads {args.nthreads}
     --lat0 {args.lat0} --lat1 {args.lat1}
     --lon0 {args.lon0} --lon1 {args.lon1}
@@ -259,11 +214,6 @@ def loop_var(args, obs_files, obs_varname, ofile, grouping="", dim=""):
     --lon0 {args.lon0} --lon1 {args.lon1} 
     --ofile {ofile} 
     --log-level {args.loglevel} 
-    """
-    if obs_varname == "precip":
-        cmd = cmd + """
-    --ifile-mask /g/data/tp28/cst565/ACS_added_value/agcd_mask_0p8_larger1_1mask_0nomask.nc
-    --varname-mask mask
     """
     cmd = cmd_split(cmd)
     logger.debug(cmd)
@@ -303,18 +253,8 @@ def tidy_filename(filename):
         filename = filename.replace("__", "_")
     return filename
 
-def get_ofile(odir="./", measure="", variable="", gcm="", scenario="", rcm="", obs="", freq="", region="", season="", datestart_hist="", dateend_hist="", datestart_fut="", dateend_fut="", kwargs=dict()):
-    # Create a list of kwargs in the style of [key0, val0, key1, val1, ... keyN, valN]
-    kwargs_list = []
-    for key in kwargs:
-        kwargs_list.append(key)
-        kwargs_list.append(kwargs[key])
-    ofile = f"{odir}/{measure}_{variable}_{'_'.join([str(i).replace('.','p') for i in kwargs_list])}_{gcm}_{scenario}_{rcm}_{obs}_{freq}_{region.replace(' ', '_')}_{season}"
-    if datestart_hist and dateend_hist:
-        ofile = ofile + f"_{datestart_hist}-{dateend_hist}"
-    if datestart_fut and dateend_fut:
-        ofile = ofile + f"_{datestart_fut}-{dateend_fut}"
-    ofile = ofile + ".nc"
+def get_ofile(odir="./", measure="", variable="", gcm="", scenario="", rcm="", obs="", freq="", region="", season="", datestart="", dateend=""):
+    ofile = f"{odir}/{measure}_{variable}_{gcm}_{scenario}_{rcm}_{obs}_{freq}_{region}_{season}_{datestart}-{dateend}.nc"
     ofile = tidy_filename(ofile)
     return ofile
 
@@ -356,9 +296,9 @@ def main():
         for region in args.regions:
             args.region = region
             for av_measure in args.av_measures:
-                ofile_av = get_ofile(odir=args.odir, measure=args.av_distance_measure, variable=args.variable, gcm=args.gcm, scenario=args.scenario_hist, rcm=args.rcm, obs=args.obs, freq=args.freq, region=args.region, season=args.season, datestart_hist=args.datestart_hist, dateend_hist=args.dateend_hist, kwargs=json.loads(args.process_kwargs))
+                ofile_av = get_ofile(odir=args.odir, measure=args.av_distance_measure, variable=args.variable, gcm=args.gcm, scenario=args.scenario_hist, rcm=args.rcm, obs=args.obs, freq=args.freq, region=args.region, season=args.season, datestart=args.datestart_hist, dateend=args.dateend_hist)
                 #< Check if we need to calculate AV
-                if (av_measure == "added_value" or av_measure == "realised_added_value" or av_measure == "added_value_norm") and (not os.path.isfile(ofile_av) or args.overwrite):
+                if (av_measure == "added_value" or av_measure == "realised_added_value") and (not os.path.isfile(ofile_av) or args.overwrite):
                     #< Collect processes
                     processes.append( loop_av(args, gcm_files_hist, rcm_files_hist, obs_files, gcm_varname, rcm_varname, obs_varname, ofile_av) )
                 #< Check if processes are to be triggered
@@ -371,11 +311,11 @@ def main():
         for region in args.regions:
             args.region = region
             for av_measure in args.av_measures:
-                ofile_pav = get_ofile(odir=args.odir, measure=args.pav_distance_measure, variable=args.variable, gcm=args.gcm, scenario=args.scenario_fut, rcm=args.rcm, freq=args.freq, region=args.region, season=args.season, datestart_hist=args.datestart_hist, dateend_hist=args.dateend_hist, datestart_fut=args.datestart_fut, dateend_fut=args.dateend_fut, kwargs=json.loads(args.process_kwargs))
+                ofile_pav = get_ofile(odir=args.odir, measure=args.pav_distance_measure, variable=args.variable, gcm=args.gcm, scenario=args.scenario_fut, rcm=args.rcm, freq=args.freq, region=args.region, season=args.season, datestart=args.datestart_fut, dateend=args.dateend_fut)
                 #< Check if we need to calculate PAV
                 if (av_measure == "potential_added_value" or av_measure == "realised_added_value") and (not os.path.isfile(ofile_pav) or args.overwrite):
                     #< Collect processes
-                    processes.append( loop_pav(args, gcm_files_hist, gcm_files_fut, rcm_files_hist, rcm_files_fut, gcm_varname, rcm_varname, ofile_pav) )
+                    processes.append( loop_pav(args, gcm_files_fut, rcm_files_fut, gcm_varname, rcm_varname, ofile_pav) )
                 #< Check if processes are to be triggered
                 check_processes(processes, args)
 
@@ -391,33 +331,14 @@ def main():
                 if args.process == "quantile":
                     grouping = "time.year"
                     variability_dim = "year"
-                ofile_var = get_ofile(odir=args.odir, measure="VAR", variable=args.variable, obs=args.obs, freq=args.freq, region=args.region, season=args.season, datestart_hist=args.datestart_hist, dateend_hist=args.dateend_hist, kwargs=json.loads(args.process_kwargs))
+                ofile_var = get_ofile(odir=args.odir, measure="VAR", variable=args.variable, obs=args.obs, freq=args.freq, region=args.region, season=args.season, datestart=args.datestart_hist, dateend=args.dateend_hist)
                 #< Check if we need to calculate VAR
-                if av_measure == "variability" or av_measure == "realised_added_value" or av_measure == "added_value_norm" and (not os.path.isfile(ofile_var) or args.overwrite):
+                if av_measure == "variability" or av_measure == "realised_added_value" and (not os.path.isfile(ofile_var) or args.overwrite):
                     #< Collect processes
                     processes.append( loop_var(args, obs_files, obs_varname, ofile_var, grouping=grouping, dim=variability_dim) )
                 #< Check if processes are to be triggered
                 check_processes(processes, args)
     #< Trigger any left over processes before we start with realised added value
-    check_processes(processes, args, True)
-
-
-    ### Normalised added value calculation
-    for season in args.seasons:
-        args.season = season
-        for region in args.regions:
-            args.region = region
-            for av_measure in args.av_measures:
-                ofile_av = get_ofile(odir=args.odir, measure=args.av_distance_measure, variable=args.variable, gcm=args.gcm, scenario=args.scenario_hist, rcm=args.rcm, obs=args.obs, freq=args.freq, region=args.region, season=args.season, datestart_hist=args.datestart_hist, dateend_hist=args.dateend_hist, kwargs=json.loads(args.process_kwargs))
-                ofile_var = get_ofile(odir=args.odir, measure="VAR", variable=args.variable, obs=args.obs, freq=args.freq, region=args.region, season=args.season, datestart_hist=args.datestart_hist, dateend_hist=args.dateend_hist, kwargs=json.loads(args.process_kwargs))
-                ofile_av_norm = get_ofile(odir=args.odir, measure=f"{args.av_distance_measure}_norm", variable=args.variable, gcm=args.gcm, scenario=args.scenario_hist, rcm=args.rcm, obs=args.obs, freq=args.freq, region=args.region, season=args.season, datestart_hist=args.datestart_hist, dateend_hist=args.dateend_hist, kwargs=json.loads(args.process_kwargs))
-                #< Check if we need to calculate VAR
-                if av_measure == "added_value_norm" and not os.path.isfile(ofile_av_norm):
-                    #< Collect processes
-                    processes.append( loop_av_norm(args, ofile_av, ofile_var, av_varname="av", var_varname=obs_varname, ofile=ofile_av_norm) )
-                #< Check if processes are to be triggered
-                check_processes(processes, args)
-    #< Trigger any left over processes
     check_processes(processes, args, True)
 
 
@@ -428,10 +349,10 @@ def main():
         for region in args.regions:
             args.region = region
             for av_measure in args.av_measures:
-                ofile_av = get_ofile(odir=args.odir, measure=args.av_distance_measure, variable=args.variable, gcm=args.gcm, scenario=args.scenario_hist, rcm=args.rcm, obs=args.obs, freq=args.freq, region=args.region, season=args.season, datestart_hist=args.datestart_hist, dateend_hist=args.dateend_hist, kwargs=json.loads(args.process_kwargs))
-                ofile_pav = get_ofile(odir=args.odir, measure=args.pav_distance_measure, variable=args.variable, gcm=args.gcm, scenario=args.scenario_fut, rcm=args.rcm, freq=args.freq, region=args.region, season=args.season, datestart_hist=args.datestart_hist, dateend_hist=args.dateend_hist, datestart_fut=args.datestart_fut, dateend_fut=args.dateend_fut, kwargs=json.loads(args.process_kwargs))
-                ofile_var = get_ofile(odir=args.odir, measure="VAR", variable=args.variable, obs=args.obs, freq=args.freq, region=args.region, season=args.season, datestart_hist=args.datestart_hist, dateend_hist=args.dateend_hist, kwargs=json.loads(args.process_kwargs))
-                ofile_rav = get_ofile(odir=args.odir, measure="RAV", variable=args.variable, gcm=args.gcm, scenario=args.scenario_fut, rcm=args.rcm, obs=args.obs, freq=args.freq, region=args.region, season=args.season, datestart_hist=args.datestart_hist, dateend_hist=args.dateend_hist, datestart_fut=args.datestart_fut, dateend_fut=args.dateend_fut, kwargs=json.loads(args.process_kwargs))
+                ofile_av = get_ofile(odir=args.odir, measure=args.av_distance_measure, variable=args.variable, gcm=args.gcm, scenario=args.scenario_hist, rcm=args.rcm, obs=args.obs, freq=args.freq, region=args.region, season=args.season, datestart=args.datestart_hist, dateend=args.dateend_hist)
+                ofile_pav = get_ofile(odir=args.odir, measure=args.pav_distance_measure, variable=args.variable, gcm=args.gcm, scenario=args.scenario_fut, rcm=args.rcm, freq=args.freq, region=args.region, season=args.season, datestart=args.datestart_fut, dateend=args.dateend_fut)
+                ofile_var = get_ofile(odir=args.odir, measure="VAR", variable=args.variable, obs=args.obs, freq=args.freq, region=args.region, season=args.season, datestart=args.datestart_hist, dateend=args.dateend_hist)
+                ofile_rav = get_ofile(odir=args.odir, measure="RAV", variable=args.variable, gcm=args.gcm, scenario=args.scenario_fut, rcm=args.rcm, obs=args.obs, freq=args.freq, region=args.region, season=args.season, datestart=args.datestart_fut, dateend=args.dateend_fut)
                 #< Check if we need to calculate VAR
                 if av_measure == "realised_added_value" and not os.path.isfile(ofile_rav):
                     #< Collect processes

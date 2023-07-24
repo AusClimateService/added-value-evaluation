@@ -15,7 +15,6 @@ import sys
 import warnings
 import lib
 import json
-import logging
 
 #< Get logger
 logger = lib.get_logger(__name__)
@@ -135,7 +134,6 @@ if __name__ == '__main__':
     memory_limit = os.getenv('MEMORY_LIMIT', memory_limit)
     client       = dask.distributed.Client(n_workers = nworkers, threads_per_worker = nthreads,
                                            memory_limit = memory_limit, local_directory = tempfile.mkdtemp(),
-                                           silence_logs = logging.ERROR,
                                         ) 
 
     #< Set the logging level

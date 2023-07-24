@@ -21,8 +21,9 @@ logger = lib.get_logger(__name__)
 def parse_arguments():
     # User argument input
     parser = argparse.ArgumentParser(description='Script for plotting a file on a map.')
-    parser.add_argument("--ifiles", dest='ifiles', nargs='+', type=str, default=[], help="Input files")
-    parser.add_argument("--ofile", dest='ofile', nargs='?', type=str, default="", help="Path and name of output plot")
+    parser.add_argument("--ifile", dest='ifile', nargs='?', type=str, default="", help="Input file")
+    parser.add_argument("--varname", dest='varname', nargs='?', type=str, default="", help="Variable name in file")
+    parser.add_argument("--ofile", dest='ofile', nargs='?', type=str, default="av.nc", help="Path and name of output file")
     parser.add_argument("--plt-title", dest='plt_title', nargs='?', type=str, default="", help="Title for plot")
     parser.add_argument("--plt-kwargs", dest='plt_kwargs', nargs='?', type=json.loads, default="{}", help="kwargs for plot. Instead of True/False use 1/0.")
 
@@ -39,25 +40,9 @@ def main():
 
     #< Open datasets
     logger.info(f"Opening datasets")
-    ds = []
-    for f in args.ifiles:
-        da = lib.open_dataset(f).to_array()
-        ds.append( da )
-    da = xr.concat(ds, "variable")
+    da = lib.open_dataset(args.ifile)[args.varname]
     logger.debug(da)
     logger.debug("==========================================")
-
-    #< Calculate a mean over all other dimensions (not xdim and ydim)
-    xdim = "lon"; ydim = "lat"
-    meandims = []
-    for d in da.dims:
-        if not d==xdim and not d==ydim:
-            meandims.append(d)
-    logger.debug(f"Calculating mean over {meandims}")
-    da = da.mean(meandims)
-    logger.debug(da)
-    logger.debug("==========================================")
-
 
     #< Plot on map
     p = da.plot.pcolormesh(transform=ccrs.PlateCarree(), subplot_kws=dict(projection=ccrs.PlateCarree(central_longitude=180)), **args.plt_kwargs)
@@ -72,21 +57,18 @@ def main():
     gl.xformatter = LONGITUDE_FORMATTER
     gl.yformatter = LATITUDE_FORMATTER
     ax.coastlines()
-
-    if args.ofile:
-        plt.savefig(args.ofile)
-    else:
-        plt.show()
+    plt.show()
 
     #< Finish
     logger.info(f"Done")
 
 
+    
 
 
 if __name__ == '__main__':
     #< Set the logging level
-    logger.setLevel("WARN")
+    logger.setLevel("DEBUG")
 
     #< Call the main function
     main()

@@ -175,7 +175,7 @@ def convert_units(ds):
                 ds[key].attrs["units"] = "K"
                 logger.debug("Converting units from degrees_Celsius to K")
         
-            elif ds[key].attrs["units"] in ["kg m-2 s-1", "kg m**-2 s**-1"]:
+            elif ds[key].attrs["units"] == "kg m-2 s-1":
                 ds[key] = ds[key] * 86400
                 ds[key].attrs["units"] = "mm"
                 logger.debug("Converting units from kg m-2 s-1 to mm")
@@ -446,10 +446,6 @@ def get_latlongrid_xr(ds):
     grid  = xr.Dataset({'longitude': lon,'latitude': lat, 'longitude_b': lon_b, 'latitude_b': lat_b})
     grid['longitude'].attrs = ds[lon_name].attrs
     grid['latitude'].attrs = ds[lat_name].attrs
-    # Add mask
-    mask = xr.where(~np.isnan(ds), 1, 0)
-    mask = mask.rename({lat_name:"latitude", lon_name:"longitude"})
-    grid["mask"] = mask
     return grid
 
 
@@ -474,10 +470,6 @@ def regrid_helper(ds, other, exclude_list=["time_bnds"], **kwargs):
     """
     grid_in   = get_latlongrid_xr(ds)
     grid_out  = get_latlongrid_xr(other)
-    logger.debug("Grid in:")
-    logger.debug(grid_in)
-    logger.debug("Grid out:")
-    logger.debug(grid_out)
     regridder = xe.Regridder(grid_in, grid_out, **kwargs)
     regridder._grid_in  = None # Otherwise there is trouble with dask
     regridder._grid_out = None # Otherwise there is trouble with dask
@@ -652,23 +644,6 @@ def quantile(da, quantile=None):
     return X
 
 
-def mean(da):
-    """Calculate mean for dataarray
-
-    Args:
-        da (xarray dataarray): Input dataarray
-
-    Returns:
-        xarray datarray
-    """
-    #< Calculate mean
-    logger.info(f"Calculating mean")
-    X = da.mean("time").load()
-    logger.debug(X)
-    logger.debug("---------------------------------------------")
-    return X
-
-
 def count_above_threshold(da, threshold=None):
     """Calculate the number of times a threshold is exceeded.
 
@@ -699,71 +674,3 @@ def count_below_threshold(da, threshold=None):
     logger.info(f"Calculating how often below {threshold}")
     X = xr.where(da<threshold, 1, 0).sum("time").load()
     return X
-
-
-def heatmap(arr, xdim="", ydim="", xlabels='', ylabels='', fmt="{:.2f}", title='', cmap=None, cmap_centre=None, vmin=None, vmax=None, robust=False):
-
-    #< Make sure xdim and ydim are in dataset
-    if not xdim in arr.dims:
-        if xdim in arr.coords:
-            arr = arr.expand_dims(xdim)
-        else:
-            exit(1)
-    if not ydim in arr.dims:
-        if ydim in arr.coords:
-            arr = arr.expand_dims(ydim)
-        else:
-            exit(1)
-
-    #< Calculate a mean over all other dimensions (not xdim and ydim)
-    meandims = []
-    for d in arr.dims:
-        if not d==xdim and not d==ydim:
-            meandims.append(d)
-    arr = arr.mean(meandims)
-
-    #< Correctly order x and y dimension
-    arr = arr.transpose(*[ydim,xdim])
-
-    #< Get the data
-    arr_data = arr.load().data
-
-    if cmap:
-        try:
-            cmap = getattr(cmaps, cmap)
-        except:
-            cmap = cmap
-
-    if robust:
-        vmin=arr.quantile(0.1); vmax=arr.quantile(0.9)
-
-    #< Adjust the colorbar values
-    if cmap_centre != None:
-        divnorm = colors.TwoSlopeNorm(vcenter=cmap_centre)
-    else:
-        divnorm = None
-
-    #< Create the figure
-    fig, ax = plt.subplots()
-    im = ax.imshow(arr_data, cmap=cmap, norm=divnorm, vmin=vmin, vmax=vmax)
-    # We want to show all ticks...
-    ax.set_xticks(np.arange(len(arr[xdim].values)))
-    ax.set_yticks(np.arange(len(arr[ydim].values)))
-    # ... and label them with the respective list entries
-    ax.set_xticklabels(xlabels if xlabels else arr[xdim].values)
-    ax.set_yticklabels(ylabels if ylabels else arr[ydim].values)
-    # Rotate the tick labels and set their alignment.
-    plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
-             rotation_mode="anchor")
-    # Loop over data dimensions and create text annotations.
-    for i in range(len(arr[ydim].values)):
-        for j in range(len(arr[xdim].values)):
-            text = ax.text(j, i, fmt.format(arr_data[i, j]),
-                           ha="center", va="center", color="k", fontsize=15)
-    # Set title
-    if title:
-        ax.set_title(title)
-
-    plt.tight_layout()
-
-    return fig
