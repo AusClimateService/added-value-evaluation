@@ -221,6 +221,27 @@ def loop_av_norm(args, ofile_av, ofile_var, av_varname, var_varname, ofile, retu
     --nworkers {args.nworkers} --nthreads {args.nthreads}
     --ofile {ofile}
     --log-level {args.loglevel}
+    --return-X False
+    """
+
+    if obs_varname == "precip":
+        cmd = cmd + """
+    --ifile-obs-premask /g/data/tp28/cst565/ACS_added_value/agcd_mask_0p8_larger1_1mask_0nomask.nc
+    --varname-obs-premask mask
+    """
+    cmd = cmd_split(cmd)
+    logger.debug(cmd)
+    return Popen(cmd)
+
+
+def loop_av_norm(args, gcm_hist_files, gcm_fut_files, rcm_hist_files, rcm_fut_files, gcm_varname, rcm_varname, ofile, return_X=False, agcd_mask=False):
+    #< Get the cmd command
+    cmd = f"""
+    python added_value_norm.py --ifile-av {ofile_av} --ifile-var {ofile_var} 
+    --varname-av {av_varname} --varname-var {var_varname} 
+    --nworkers {args.nworkers} --nthreads {args.nthreads}
+    --ofile {ofile}
+    --log-level {args.loglevel}
     """
 
     if agcd_mask:
