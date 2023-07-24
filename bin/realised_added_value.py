@@ -38,12 +38,12 @@ def parse_arguments():
     parser.add_argument("--nworkers", dest='nworkers', nargs='?', type=int, const='', default=2, help="Number of workers.")
 
     parser.add_argument("--log-level", dest='loglevel', nargs='?', type=str, default="INFO", help="Amount of log output")
-
+    parser.add_argument("--normalise", dest='normalise', action='store_true', help='Whether to normalise using the variability information from --ifile-var')
     return parser
 
 
 
-def realised_added_value(da_av, da_pav, da_var):
+def realised_added_value(da_av, da_pav, da_var=None):
     """Calculate realised added value statistic from added value (da_av), potential added valuie (da_pav) and reference variability (da_var) dataarray
 
     Args:
@@ -54,16 +54,24 @@ def realised_added_value(da_av, da_pav, da_var):
     Returns:
         xarray dataset : Realised added value
     """
-    #< Regrid all varibility to the RCM resolution
-    logger.info(f"Regridding variance data to RCM grid")
-    da_var = lib.regrid(da_var, da_av)
-    logger.debug(da_var)
-    logger.debug("=====================================")
-    #< Calculate realised added value
-    logger.info(f"Calculating realised added value")
     eps = 1e-12
-    da_var = da_var.where(da_var>eps, np.nan)
-    rav = da_av * np.abs(da_pav) / da_var
+
+    #< Regrid all varibility to the RCM resolution
+    if not da_var is None:
+        logger.info(f"Regridding variance data to RCM grid")
+        da_var = lib.regrid(da_var, da_av)
+        logger.debug(da_var)
+        logger.debug("=====================================")
+
+        da_var = da_var.where(da_var>eps, np.nan)
+    
+        #< Calculate realised added value
+        logger.info(f"Calculating realised added value with normalisation using var")
+        rav = da_av * np.abs(da_pav) / da_var
+    else:
+        logger.info(f"Calculating realised added value without normalisation")
+        rav = da_av * np.abs(da_pav)
+
     #< Convert av to a dataset
     rav = rav.to_dataset(name="rav")
     #< Return
@@ -82,10 +90,8 @@ def main():
     logger.info(f"Opening datasets")
     ds_av = lib.open_dataset(args.ifile_av)
     ds_pav = lib.open_dataset(args.ifile_pav)
-    ds_var = lib.open_dataset(args.ifile_var)
     logger.debug(ds_av)
     logger.debug(ds_pav)
-    logger.debug(ds_var)
 
     #< Get the history of the input files
     inlogs = {}
@@ -93,14 +99,22 @@ def main():
         inlogs[f"av"] = ds_av.attrs["history"]
     if "history" in ds_pav.attrs:
         inlogs[f"pav"] = ds_pav.attrs["history"]
-    if "history" in ds_var.attrs:
-        inlogs[f"var"] = ds_var.attrs["history"]
 
     #< Fetch variable from dataset
     logger.info(f"Extracting variables from datasets")
     da_av = ds_av[args.varname_av]
     da_pav = ds_pav[args.varname_pav]
-    da_var = ds_var[args.varname_var]
+
+    if args.normalise:
+        logger.info(f"Apply normalisation using var data")
+        ds_var = lib.open_dataset(args.ifile_var)
+        logger.debug(ds_var)
+        if "history" in ds_var.attrs:
+            inlogs[f"var"] = ds_var.attrs["history"]
+        logger.info(f"Extracting data")
+        da_var = ds_var[args.varname_var]
+    else:
+        da_var = None
 
     #< Calculate realised added value
     rav = realised_added_value(da_av, da_pav, da_var)

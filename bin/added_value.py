@@ -43,6 +43,8 @@ def parse_arguments():
 
     parser.add_argument("--region", dest='region', nargs='?', type=str, default="", help="Region masking using lib_spatial.py")
 
+    parser.add_argument("--agcd_mask", dest='agcd_mask', action='store_true', help='Whether to apply masking for AGCD precipitation data')
+
     parser.add_argument("--process", dest='process', nargs='?', type=str, default="", help="Process to get added value for (e.g., quantile)")
     parser.add_argument("--process-kwargs", dest='process_kwargs', nargs='?', type=json.loads, default="{}", help="Kwargs to pass to process function (e.g., \'{\"quantile\": 0.95}\' 0.95 for quantile)")
     parser.add_argument("--distance-measure", dest='distance_measure', nargs='?', type=str, default="", help="Distance measure to use for AV calculation")
@@ -58,7 +60,8 @@ def parse_arguments():
     parser.add_argument("--lon0", dest='lon0', nargs='?', type=float, default=-999, help="Lower longitude to select")
     parser.add_argument("--lon1", dest='lon1', nargs='?', type=float, default=-999, help="Upper longitude to select")
 
-    parser.add_argument("--return-X", dest='return_X', nargs='?', type=lib.str2bool, default="False", help="Also return the regridded climate statistics")
+    parser.add_argument("--return-X", dest='return_X', action='store_true', help="Also return the regridded climate statistics")
+    parser.add_argument("--stations", dest='stations', default=False, action='store_true',help="Obs data is point-based station data")
 
     parser.add_argument("--nthreads", dest='nthreads', nargs='?', type=int, const='', default=1, help="Number of threads.")
     parser.add_argument("--nworkers", dest='nworkers', nargs='?', type=int, const='', default=2, help="Number of workers.")
@@ -69,7 +72,7 @@ def parse_arguments():
 
 
 
-def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_measure="AVrmse", region=None, return_X=False):
+def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_measure="AVrmse", region=None, return_X=False, agcd_mask=False, stations=False):
     """Calculate added value statistic from driving model (da_gcm), regional model (da_rcm) and reference (da_obs) dataarray
 
     Args:
@@ -81,6 +84,8 @@ def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_mea
         measure (str): Distance measure to use for added value calculation
         region (str): Region passed to lib_spatial.py for masking
         write_X (bool): Should the regridded climate statistic be written out too?
+        agcd_mask (bool): Apply AGCD mask based on AGCD precip data
+        stations (bool): Is reference data a point-based dataset?
 
     Returns:
         xarray dataset : Added value
@@ -100,14 +105,37 @@ def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_mea
     X_rcm = fun(da_rcm, **process_kwargs)
     X_obs = fun(da_obs, **process_kwargs)
     #< Regrid all quantiles to the RCM resolution
-    logger.info(f"Regridding GCM data to RCM grid")
-    X_gcm = lib.regrid(X_gcm, X_rcm)
-    logger.debug(X_gcm)
-    logger.debug("---------------------------------------------")
-    logger.info(f"Regridding obs data to RCM grid")
-    X_obs = lib.regrid(X_obs, X_rcm)
-    logger.debug(X_obs)
-    logger.debug("---------------------------------------------")
+    if not stations:
+        logger.info(f"Regridding GCM data to RCM grid")
+        X_gcm = lib.regrid(X_gcm, X_rcm)
+        logger.info(f"Regridding obs data to RCM grid")
+        X_obs = lib.regrid(X_obs, X_rcm)
+        logger.debug(X_obs)
+        logger.debug("---------------------------------------------")
+        #< Mask data
+        if not region is None:
+            logger.info("Masking X_obs.")
+            X_obs = lib_spatial.apply_region_mask(X_obs, args.region)
+            logger.debug(X_obs)
+            logger.info("Masking X_gcm.")
+            X_gcm = lib_spatial.apply_region_mask(X_gcm, args.region)
+            logger.debug(X_gcm)
+            logger.info("Masking X_rcm.")
+            X_rcm = lib_spatial.apply_region_mask(X_rcm, args.region)
+            logger.debug(X_rcm)
+            logger.debug("---------------------------------------------")
+       #< AGCD mask
+        if agcd_mask:
+            logger.info("Masking X_obs with AGCD mask")
+            X_obs = lib_spatial.apply_agcd_data_mask(X_obs)
+            logger.debug(X_obs)
+            logger.info("Masking X_gcm with AGCD mask")
+            X_gcm = lib_spatial.apply_agcd_data_mask(X_gcm)
+            logger.debug(X_gcm)
+            logger.info("Masking X_rcm with AGCD mask")
+            X_rcm = lib_spatial.apply_agcd_data_mask(X_rcm)
+            logger.debug(X_rcm)
+
     #< Calculate added value
     logger.info(f"Calculating added value using {distance_measure}")
     if hasattr(lib, distance_measure):
@@ -134,7 +162,7 @@ def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_mea
 
 def main():
     # Load the logger
-    logger.info(f"Start {sys.argv[0]}")
+    logger.info(f"Start")
 
     #< Get user arguments
     parser = parse_arguments()
@@ -209,22 +237,33 @@ def main():
         logger.debug(da_obs)
         logger.debug("---------------------------------------------")
 
-    #< Cut all dataarrays to the same domain
-    if args.lat0!=-999 and args.lat1!=-999 and args.lon0!=-999 and args.lon1!=-999:
-        logger.info(f"Selecting domain")
-        da_gcm = da_gcm.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
-        da_rcm = da_rcm.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
-        da_obs = da_obs.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
-        logger.debug(da_gcm)
-        logger.debug(da_rcm)
-        logger.debug(da_obs)
-        logger.debug("---------------------------------------------")
+    if args.stations:
+        print(args.stations,'stations')
+        # extract data from nearest points to stations
+        lon = da_obs.lon
+        lat = da_obs.lat
+        logger.info(f"Selecting station data")
+        da_gcm = da_gcm.sel(lat=xr.DataArray(lat, dims='station'), lon=xr.DataArray(lon, dims='station'), method='nearest').load()
+        da_rcm = da_rcm.sel(lat=xr.DataArray(lat, dims='station'), lon=xr.DataArray(lon, dims='station'), method='nearest').load()
+        da_obs = da_obs.load()
+    else:
+ 
+        #< Cut all dataarrays to the same domain
+        if args.lat0!=-999 and args.lat1!=-999 and args.lon0!=-999 and args.lon1!=-999:
+            logger.info(f"Selecting domain")
+            da_gcm = da_gcm.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
+            da_rcm = da_rcm.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
+            da_obs = da_obs.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
+            logger.debug(da_gcm)
+            logger.debug(da_rcm)
+            logger.debug(da_obs)
+            logger.debug("---------------------------------------------")
 
     #< Calculate added value
     if args.return_X:
-        av, X_gcm, X_rcm, X_obs = added_value(da_gcm, da_rcm, da_obs, args.process, args.process_kwargs, distance_measure=args.distance_measure, region=args.region, return_X=args.return_X)
+        av, X_gcm, X_rcm, X_obs = added_value(da_gcm, da_rcm, da_obs, args.process, args.process_kwargs, distance_measure=args.distance_measure, region=args.region, return_X=args.return_X, agcd_mask=args.agcd_mask, stations=args.stations)
     else:
-        av = added_value(da_gcm, da_rcm, da_obs, args.process, args.process_kwargs, distance_measure=args.distance_measure, region=args.region, return_X=args.return_X)
+        av = added_value(da_gcm, da_rcm, da_obs, args.process, args.process_kwargs, distance_measure=args.distance_measure, region=args.region, return_X=args.return_X, agcd_mask=args.agcd_mask, stations=args.stations)
     logger.debug("Added values looks like:")
     logger.debug(av)
 
@@ -237,7 +276,7 @@ def main():
         lib.write2nc(X_obs, args.ofile.replace(".nc", "_X_obs.nc"), inlogs=inlogs)
 
 
-    logger.info(f"Done")
+    logger.debug(f"Done")
 
 
     
