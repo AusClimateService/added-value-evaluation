@@ -23,13 +23,11 @@ logger = lib.get_logger(__name__)
 
 def parse_arguments():
     # User argument input
-    parser = argparse.ArgumentParser(description='Script for calculating realised added value AV, PAV and obs as input.')
+    parser = argparse.ArgumentParser(description='Script for calculating normalised added value using AV and obs as input.')
     parser.add_argument("--ifile-av", dest='ifile_av', nargs='*', type=str, default=[], help="Input added value file")
-    parser.add_argument("--ifile-pav", dest='ifile_pav', nargs='*', type=str, default=[], help="Input potential added value files")
     parser.add_argument("--ifile-var", dest='ifile_var', nargs='*', type=str, default=[], help="Input variability file")
 
     parser.add_argument("--varname-av", dest='varname_av', nargs='?', type=str, default="av", help="Variable name in added value file")
-    parser.add_argument("--varname-pav", dest='varname_pav', nargs='?', type=str, default="pav", help="Variable name in potential added value file")
     parser.add_argument("--varname-var", dest='varname_var', nargs='?', type=str, default="", help="Variable name in variability files")
 
     parser.add_argument("--ofile", dest='ofile', nargs='?', type=str, default="av.nc", help="Path and name of output file")
@@ -43,31 +41,28 @@ def parse_arguments():
 
 
 
-def realised_added_value(da_av, da_pav, da_var):
-    """Calculate realised added value statistic from added value (da_av), potential added valuie (da_pav) and reference variability (da_var) dataarray
+def added_value_norm(da_av, da_var):
+    """Calculate normalised added value statistic from added value (da_av) and reference variability (da_var) dataarray
 
     Args:
         da_av (xarray dataarray): Added value data
-        da_pav (xarray dataarray): Potential added value data
         da_var (xarray dataarray): Reference variability data
 
     Returns:
-        xarray dataset : Realised added value
+        xarray dataset : Normalised added value
     """
     #< Regrid all varibility to the RCM resolution
     logger.info(f"Regridding variance data to RCM grid")
     da_var = lib.regrid(da_var, da_av)
-    logger.debug(da_var)
-    logger.debug("=====================================")
-    #< Calculate realised added value
-    logger.info(f"Calculating realised added value")
+    #< Calculate normalised added value
+    logger.info(f"Calculating normalised added value")
     eps = 1e-12
     da_var = da_var.where(da_var>eps, np.nan)
-    rav = da_av * np.abs(da_pav) / da_var
+    av_norm = da_av / np.sqrt(da_var)
     #< Convert av to a dataset
-    rav = rav.to_dataset(name="rav")
+    av_norm = av_norm.to_dataset(name="av_norm")
     #< Return
-    return rav
+    return av_norm
 
 
 def main():
@@ -81,33 +76,28 @@ def main():
     #< Open datasets
     logger.info(f"Opening datasets")
     ds_av = lib.open_dataset(args.ifile_av)
-    ds_pav = lib.open_dataset(args.ifile_pav)
     ds_var = lib.open_dataset(args.ifile_var)
     logger.debug(ds_av)
-    logger.debug(ds_pav)
     logger.debug(ds_var)
 
     #< Get the history of the input files
     inlogs = {}
     if "history" in ds_av.attrs:
         inlogs[f"av"] = ds_av.attrs["history"]
-    if "history" in ds_pav.attrs:
-        inlogs[f"pav"] = ds_pav.attrs["history"]
     if "history" in ds_var.attrs:
         inlogs[f"var"] = ds_var.attrs["history"]
 
     #< Fetch variable from dataset
     logger.info(f"Extracting variables from datasets")
     da_av = ds_av[args.varname_av]
-    da_pav = ds_pav[args.varname_pav]
     da_var = ds_var[args.varname_var]
 
     #< Calculate realised added value
-    rav = realised_added_value(da_av, da_pav, da_var)
+    av_norm = added_value_norm(da_av, da_var)
 
     #< Save realised added value to netcdf
     logger.info("Saving to netcdf")
-    lib.write2nc(rav, args.ofile, inlogs=inlogs)
+    lib.write2nc(av_norm, args.ofile, inlogs=inlogs)
 
     #< Finish
     logger.info(f"Done")

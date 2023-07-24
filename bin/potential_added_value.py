@@ -16,6 +16,7 @@ import warnings
 import lib
 import json
 import lib_spatial
+import logging
 
 #< Get logger
 logger = lib.get_logger(__name__)
@@ -24,8 +25,10 @@ logger = lib.get_logger(__name__)
 def parse_arguments():
     # User argument input
     parser = argparse.ArgumentParser(description='Script for calculating potential added value using GCM and RCM as input.')
-    parser.add_argument("--ifiles-gcm", dest='ifiles_gcm', nargs='*', type=str, default=[], help="Input GCM files")
-    parser.add_argument("--ifiles-rcm", dest='ifiles_rcm', nargs='*', type=str, default=[], help="Input RCM files")
+    parser.add_argument("--ifiles-gcm-hist", dest='ifiles_gcm_hist', nargs='*', type=str, default=[], help="Input historical GCM files")
+    parser.add_argument("--ifiles-rcm-hist", dest='ifiles_rcm_hist', nargs='*', type=str, default=[], help="Input historical RCM files")
+    parser.add_argument("--ifiles-gcm-fut", dest='ifiles_gcm_fut', nargs='*', type=str, default=[], help="Input scenario GCM files")
+    parser.add_argument("--ifiles-rcm-fut", dest='ifiles_rcm_fut', nargs='*', type=str, default=[], help="Input scenario RCM files")
 
     parser.add_argument("--varname-gcm", dest='varname_gcm', nargs='?', type=str, default="", help="Variable name in GCM files")
     parser.add_argument("--varname-rcm", dest='varname_rcm', nargs='?', type=str, default="", help="Variable name in RCM files")
@@ -36,8 +39,10 @@ def parse_arguments():
     parser.add_argument("--process-kwargs", dest='process_kwargs', nargs='?', type=json.loads, default="{}", help="Kwargs to pass to process function (e.g., \'{\"quantile\": 0.95}\' 0.95 for quantile)")
     parser.add_argument("--distance-measure", dest='distance_measure', nargs='?', type=str, default="", help="Distance measure to use for PAV calculation, either PAVdiff or PAVdiff_rel")
 
-    parser.add_argument("--datestart", dest='datestart', nargs='?', type=str, default="", help="Start date of future ssp period")
-    parser.add_argument("--dateend", dest='dateend', nargs='?', type=str, default="", help="End date of future ssp period")
+    parser.add_argument("--datestart-hist", dest='datestart_hist', nargs='?', type=str, default="", help="Start date of historical period")
+    parser.add_argument("--dateend-hist", dest='dateend_hist', nargs='?', type=str, default="", help="End date of historical period")
+    parser.add_argument("--datestart-fut", dest='datestart_fut', nargs='?', type=str, default="", help="Start date of future ssp period")
+    parser.add_argument("--dateend-fut", dest='dateend_fut', nargs='?', type=str, default="", help="End date of future ssp period")
 
     parser.add_argument("--months", dest='months', nargs='*', type=int, default=[], help="Select only certain months (e.g. 12 1 2 for DJF")
 
@@ -59,12 +64,14 @@ def parse_arguments():
 
 
 
-def potential_added_value(da_gcm, da_rcm, process, process_kwargs={}, distance_measure="PAVdiff", region=None, return_X=False):
+def potential_added_value(da_gcm_hist, da_gcm_fut, da_rcm_hist, da_rcm_fut, process, process_kwargs={}, distance_measure="PAVdiff", region=None, return_X=False):
     """Calculate potential added value statistic from driving model (da_gcm) and regional model (da_rcm) dataarray
 
     Args:
-        da_gcm (xarray dataarray): Driving model data
-        da_rcm (xarray dataarray): Regional model data
+        da_gcm_hist (xarray dataarray): Driving model data for historical period
+        da_gcm_fut (xarray dataarray): Driving model data for ssp scenario
+        da_rcm_hist (xarray dataarray): Regional model data for historical period
+        da_rcm_fut (xarray dataarray): Regional model data for ssp scenario
         process (str): Process to calculate PAV for (e.g., quantile)
         process_kwargs (dict): Kwargs to pass to "process" (e.g., {'quantile':0.95})
         distance_measure (str): Distance measure to use for added value calculation. 
@@ -76,17 +83,24 @@ def potential_added_value(da_gcm, da_rcm, process, process_kwargs={}, distance_m
         xarray dataset : Added value
     """
     #< Make sure all dataarrays have the same units
-    assert "units" in da_gcm.attrs, f"da_gcm has no units attribute"
-    assert "units" in da_rcm.attrs, f"da_rcm has no units attribute"
-    assert da_gcm.attrs["units"] == da_rcm.attrs["units"], f"Not all dataarrays have the same units: {da_gcm.attrs['units']} != {da_rcm.attrs['units']}"
+    assert "units" in da_gcm_hist.attrs, f"da_gcm_hist has no units attribute"
+    assert "units" in da_rcm_hist.attrs, f"da_rcm_hist has no units attribute"
+    assert "units" in da_gcm_fut.attrs, f"da_gcm_fut has no units attribute"
+    assert "units" in da_rcm_fut.attrs, f"da_rcm_fut has no units attribute"
+    assert da_gcm_hist.attrs["units"] == da_gcm_fut.attrs["units"] == da_rcm_hist.attrs["units"] == da_rcm_fut.attrs["units"], f"Not all dataarrays have the same units: {da_gcm_hist.attrs['units']} != {da_gcm_fut.attrs['units']} != {da_rcm_hist.attrs['units']} != {da_rcm_fut.attrs['units']}"
     #< Search for "process" function in library and run it on all three dataarrays
     if hasattr(lib, process):
         fun = getattr(lib, process)
     else:
         assert False, f"{process} not implemented!"
     logger.info(f"Calculating {process}")
-    X_gcm = fun(da_gcm, **process_kwargs)
-    X_rcm = fun(da_rcm, **process_kwargs)
+    X_gcm_hist = fun(da_gcm_hist, **process_kwargs)
+    X_gcm_fut = fun(da_gcm_fut, **process_kwargs)
+    X_rcm_hist = fun(da_rcm_hist, **process_kwargs)
+    X_rcm_fut = fun(da_rcm_fut, **process_kwargs)
+    # Get the response
+    X_gcm = X_gcm_fut - X_gcm_hist
+    X_rcm = X_rcm_fut - X_rcm_hist
     #< Regrid all quantiles to the RCM resolution
     logger.info(f"Regridding GCM data to RCM grid")
     X_gcm = lib.regrid(X_gcm, X_rcm)
@@ -99,7 +113,7 @@ def potential_added_value(da_gcm, da_rcm, process, process_kwargs={}, distance_m
     pav = fun(X_gcm, X_rcm)
     #< Mask data
     if not region is None:
-        pav = lib_spatial.apply_region_mask(pav, region)
+        pav = lib_spatial.apply_region_mask(pav, region.replace("_", " "))
     #< Convert av to a dataset
     pav = pav.to_dataset(name="pav")
     #< Return
@@ -119,45 +133,61 @@ def main():
 
     #< Open datasets
     logger.info(f"Opening datasets")
-    ds_gcm = lib.open_dataset(args.ifiles_gcm)
-    ds_rcm = lib.open_dataset(args.ifiles_rcm)
-    logger.debug(ds_gcm)
-    logger.debug(ds_rcm)
+    ds_gcm_hist = lib.open_dataset(args.ifiles_gcm_hist)
+    ds_rcm_hist = lib.open_dataset(args.ifiles_rcm_hist)
+    ds_gcm_fut = lib.open_dataset(args.ifiles_gcm_fut)
+    ds_rcm_fut = lib.open_dataset(args.ifiles_rcm_fut)
+    logger.debug(ds_gcm_hist)
+    logger.debug(ds_rcm_hist)
+    logger.debug(ds_gcm_fut)
+    logger.debug(ds_rcm_fut)
 
     #< Get the history of the input files
     inlogs = {}
-    if "history" in ds_gcm.attrs:
-        inlogs[f"gcm"] = ds_gcm.attrs["history"]
-    if "history" in ds_rcm.attrs:
-        inlogs[f"rcm"] = ds_rcm.attrs["history"]
+    if "history" in ds_gcm_hist.attrs:
+        inlogs[f"gcm_hist"] = ds_gcm_hist.attrs["history"]
+    if "history" in ds_rcm_hist.attrs:
+        inlogs[f"rcm_hist"] = ds_rcm_hist.attrs["history"]
+    if "history" in ds_gcm_fut.attrs:
+        inlogs[f"gcm_fut"] = ds_gcm_fut.attrs["history"]
+    if "history" in ds_rcm_fut.attrs:
+        inlogs[f"rcm_fut"] = ds_rcm_fut.attrs["history"]
 
     #< Fetch variable from dataset
     logger.info(f"Extracting variables from datasets")
-    da_gcm = ds_gcm[args.varname_gcm]
-    da_rcm = ds_rcm[args.varname_rcm]
+    da_gcm_hist = ds_gcm_hist[args.varname_gcm]
+    da_gcm_fut = ds_gcm_fut[args.varname_gcm]
+    da_rcm_hist = ds_rcm_hist[args.varname_rcm]
+    da_rcm_fut = ds_rcm_fut[args.varname_rcm]
 
     #< Cut all dataarrays to same time period
     logger.info(f"Selecting ssp time period")
-    da_gcm = da_gcm.sel(time=slice(args.datestart, args.dateend))
-    da_rcm = da_rcm.sel(time=slice(args.datestart, args.dateend))
+    da_gcm_hist = da_gcm_hist.sel(time=slice(args.datestart_hist, args.dateend_hist))
+    da_gcm_fut = da_gcm_fut.sel(time=slice(args.datestart_fut, args.dateend_fut))
+    da_rcm_hist = da_rcm_hist.sel(time=slice(args.datestart_hist, args.dateend_hist))
+    da_rcm_fut = da_rcm_fut.sel(time=slice(args.datestart_fut, args.dateend_fut))
 
     #< Select certain months
     if args.months:
         logger.info(f"Selecting months {args.months}")
-        da_gcm = da_gcm.sel(time=da_gcm.time.dt.month.isin(args.months))
-        da_rcm = da_rcm.sel(time=da_rcm.time.dt.month.isin(args.months))
+        da_gcm_hist = da_gcm_hist.sel(time=da_gcm_hist.time.dt.month.isin(args.months))
+        da_gcm_fut = da_gcm_fut.sel(time=da_gcm_fut.time.dt.month.isin(args.months))
+        da_rcm_hist = da_rcm_hist.sel(time=da_rcm_hist.time.dt.month.isin(args.months))
+        da_rcm_fut = da_rcm_fut.sel(time=da_rcm_fut.time.dt.month.isin(args.months))
 
     #< Cut all dataarrays to the same domain
     if args.lat0!=-999 and args.lat1!=-999 and args.lon0!=-999 and args.lon1!=-999:
         logger.info(f"Selecting domain")
-        da_gcm = da_gcm.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
-        da_rcm = da_rcm.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
+        da_gcm_hist = da_gcm_hist.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
+        da_gcm_fut = da_gcm_fut.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
+        da_rcm_hist = da_rcm_hist.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
+        da_rcm_fut = da_rcm_fut.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
 
     #< Calculate added value
     if args.return_X:
-        pav, X_gcm, X_rcm = potential_added_value(da_gcm, da_rcm, args.process, args.process_kwargs, distance_measure=args.distance_measure, region=args.region, return_X=args.return_X)
+        pav, X_gcm, X_rcm = potential_added_value(da_gcm_hist, da_gcm_fut, da_rcm_hist, da_rcm_fut, args.process, args.process_kwargs, distance_measure=args.distance_measure, region=args.region, return_X=args.return_X)
     else:
-        pav = potential_added_value(da_gcm, da_rcm, args.process, args.process_kwargs, distance_measure=args.distance_measure, region=args.region, return_X=args.return_X)
+        pav = potential_added_value(da_gcm_hist, da_gcm_fut, da_rcm_hist, da_rcm_fut, args.process, args.process_kwargs, distance_measure=args.distance_measure, region=args.region, return_X=args.return_X)
 
     #< Save added value to netcdf
     logger.info("Saving to netcdf")
@@ -181,6 +211,7 @@ if __name__ == '__main__':
         'distributed.comm.timeouts.tcp': '60s',
         'distributed.comm.retry.count': 5,
         'distributed.scheduler.allowed-failures': 10,
+        "distributed.scheduler.worker-saturation": 1.1, #< This should use the new behaviour which helps with memory pile up
     })
 
     parser        = parse_arguments()
@@ -192,6 +223,7 @@ if __name__ == '__main__':
     memory_limit = os.getenv('MEMORY_LIMIT', memory_limit)
     client       = dask.distributed.Client(n_workers = nworkers, threads_per_worker = nthreads,
                                            memory_limit = memory_limit, local_directory = tempfile.mkdtemp(),
+                                           silence_logs = logging.ERROR,
                                         ) 
 
     #< Set the logging level

@@ -16,6 +16,7 @@ import warnings
 import lib
 import json
 import lib_spatial
+import logging
 
 #< Get logger
 logger = lib.get_logger(__name__)
@@ -24,9 +25,11 @@ logger = lib.get_logger(__name__)
 def parse_arguments():
     # User argument input
     parser = argparse.ArgumentParser(description='Script for calculating variability.')
-    parser.add_argument("--ifiles", dest='ifiles', nargs='*', type=str, default=[], help="Input GCM files")
+    parser.add_argument("--ifiles", dest='ifiles', nargs='*', type=str, default=[], help="Input reference files")
+    parser.add_argument("--varname", dest='varname', nargs='?', type=str, default="", help="Variable name in reference files")
 
-    parser.add_argument("--varname", dest='varname', nargs='?', type=str, default="", help="Variable name in GCM files")
+    parser.add_argument("--ifile-mask", dest='ifile_mask', nargs='?', type=str, default="", help="Input reference mask file (boolean mask; True=Mask)")
+    parser.add_argument("--varname-mask", dest='varname_mask', nargs='?', type=str, default="", help="Variable name in reference mask file")
 
     parser.add_argument("--region", dest='region', nargs='?', type=str, default="", help="Region masking using lib_spatial.py")
 
@@ -110,6 +113,14 @@ def main():
     logger.info(f"Extracting variable from dataset")
     da = ds[args.varname]
 
+    #< Masking
+    if args.ifile_mask:
+        mask = lib.open_dataset(args.ifile_mask)[args.varname_mask]
+        logger.debug("Found this dataarray for masking the reference input:")
+        logger.debug(mask)
+        with xr.set_options(keep_attrs=True):
+            da = da.where(~mask.astype(bool))
+
     #< Cut all dataarray to the time period
     logger.info(f"Selecting time period")
     da = da.sel(time=slice(args.datestart, args.dateend))
@@ -130,7 +141,7 @@ def main():
 
     #< Mask data
     if args.region:
-        da = lib_spatial.apply_region_mask(da, args.region)
+        da = lib_spatial.apply_region_mask(da, args.region.replace("_", " "))
 
     #< Calculate variability
     var = variability(da, args.process, args.process_kwargs, grouping=args.grouping, dim=args.dim)
@@ -143,9 +154,6 @@ def main():
     logger.debug(f"Done")
 
 
-    
-
-
 if __name__ == '__main__':
 
     dask.config.set({
@@ -154,6 +162,8 @@ if __name__ == '__main__':
         'distributed.comm.timeouts.tcp': '60s',
         'distributed.comm.retry.count': 5,
         'distributed.scheduler.allowed-failures': 10,
+        "distributed.scheduler.worker-saturation": 1.1, #< This should use the new behaviour which helps with memory pile up
+        'array.slicing.split_large_chunks': False,
     })
 
     parser        = parse_arguments()
@@ -165,6 +175,7 @@ if __name__ == '__main__':
     memory_limit = os.getenv('MEMORY_LIMIT', memory_limit)
     client       = dask.distributed.Client(n_workers = nworkers, threads_per_worker = nthreads,
                                            memory_limit = memory_limit, local_directory = tempfile.mkdtemp(),
+                                           silence_logs = logging.ERROR,
                                         ) 
 
     #< Set the logging level

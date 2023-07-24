@@ -21,7 +21,9 @@ logger = lib.get_logger(__name__)
 def parse_arguments():
     # User argument input
     parser = argparse.ArgumentParser(description='Script for plotting a file on a map.')
-    parser.add_argument("--ifiles", dest='ifiles', nargs='+', type=str, default=[], help="Input files")
+    parser.add_argument("--ifiles", dest='ifiles', nargs='+', type=str, default="", help="Input files")
+    parser.add_argument("--varname", dest='varname', nargs='?', type=str, default="", help="Variable name in file")
+    parser.add_argument("--names", dest='names', nargs='+', type=str, default="", help="Name for each input file (e.g. NorESM_JJA_99p)")
     parser.add_argument("--ofile", dest='ofile', nargs='?', type=str, default="", help="Path and name of output plot")
     parser.add_argument("--plt-title", dest='plt_title', nargs='?', type=str, default="", help="Title for plot")
     parser.add_argument("--plt-kwargs", dest='plt_kwargs', nargs='?', type=json.loads, default="{}", help="kwargs for plot. Instead of True/False use 1/0.")
@@ -41,37 +43,14 @@ def main():
     logger.info(f"Opening datasets")
     ds = []
     for f in args.ifiles:
-        da = lib.open_dataset(f).to_array()
+        da = lib.open_dataset(f)[args.varname]
         ds.append( da )
-    da = xr.concat(ds, "variable")
-    logger.debug(da)
+    ds = xr.concat(ds, pd.Index(args.names, name="name"))
+    logger.debug(ds)
     logger.debug("==========================================")
 
-    #< Calculate a mean over all other dimensions (not xdim and ydim)
-    xdim = "lon"; ydim = "lat"
-    meandims = []
-    for d in da.dims:
-        if not d==xdim and not d==ydim:
-            meandims.append(d)
-    logger.debug(f"Calculating mean over {meandims}")
-    da = da.mean(meandims)
-    logger.debug(da)
-    logger.debug("==========================================")
-
-
-    #< Plot on map
-    p = da.plot.pcolormesh(transform=ccrs.PlateCarree(), subplot_kws=dict(projection=ccrs.PlateCarree(central_longitude=180)), **args.plt_kwargs)
-    ax = p.axes
-    # Map settings
-    ax.set_title(args.plt_title)
-    gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=True, linewidth=1, color='gray', alpha=0.5, linestyle='--')
-    gl.top_labels = False
-    gl.right_labels = False
-    gl.left_labels = True
-    gl.bottom_labels = True
-    gl.xformatter = LONGITUDE_FORMATTER
-    gl.yformatter = LATITUDE_FORMATTER
-    ax.coastlines()
+    #< Plot on scorecard
+    fig = lib.heatmap(ds, xdim="quantile", ydim="name", title=args.plt_title)
 
     if args.ofile:
         plt.savefig(args.ofile)
@@ -80,13 +59,11 @@ def main():
 
     #< Finish
     logger.info(f"Done")
-
-
-
+    
 
 if __name__ == '__main__':
     #< Set the logging level
-    logger.setLevel("WARN")
+    logger.setLevel("DEBUG")
 
     #< Call the main function
     main()

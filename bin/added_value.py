@@ -16,6 +16,7 @@ import warnings
 import lib
 import json
 import lib_spatial
+import logging
 
 
 #< Get logger
@@ -32,6 +33,13 @@ def parse_arguments():
     parser.add_argument("--varname-gcm", dest='varname_gcm', nargs='?', type=str, default="", help="Variable name in GCM files")
     parser.add_argument("--varname-rcm", dest='varname_rcm', nargs='?', type=str, default="", help="Variable name in RCM files")
     parser.add_argument("--varname-obs", dest='varname_obs', nargs='?', type=str, default="", help="Variable name in reference files")
+
+    parser.add_argument("--ifile-obs-premask", dest='ifile_obs_premask', nargs='?', type=str, default=[], help="Input reference file mask (boolean mask; True=Mask)")
+    parser.add_argument("--varname-obs-premask", dest='varname_obs_premask', nargs='?', type=str, default="", help="Variable name in reference file mask")
+    parser.add_argument("--ifile-gcm-premask", dest='ifile_gcm_premask', nargs='?', type=str, default=[], help="Input GCM file mask (boolean mask; True=Mask)")
+    parser.add_argument("--varname-gcm-premask", dest='varname_gcm_premask', nargs='?', type=str, default="", help="Variable name in GCM file mask")
+    parser.add_argument("--ifile-rcm-premask", dest='ifile_rcm_premask', nargs='?', type=str, default=[], help="Input RCM file mask (boolean mask; True=Mask)")
+    parser.add_argument("--varname-rcm-premask", dest='varname_rcm_premask', nargs='?', type=str, default="", help="Variable name in RCM file mask")
 
     parser.add_argument("--region", dest='region', nargs='?', type=str, default="", help="Region masking using lib_spatial.py")
 
@@ -112,7 +120,7 @@ def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_mea
     #< Mask data
     if not region is None:
         logger.info("Masking added value.")
-        av = lib_spatial.apply_region_mask(av, args.region)
+        av = lib_spatial.apply_region_mask(av, region.replace("_", " "))
         logger.debug(av)
         logger.debug("---------------------------------------------")
     #< Convert av to a dataset
@@ -159,6 +167,26 @@ def main():
     logger.debug(da_rcm)
     logger.debug(da_obs)
     logger.debug("---------------------------------------------")
+
+    #< Mask input dataarray
+    if args.ifile_obs_premask:
+        da_obs_mask = lib.open_dataset(args.ifile_obs_premask)[args.varname_obs_premask]
+        logger.debug(f"Found this dataarray for masking the reference input:")
+        logger.debug(da_obs_mask)
+        with xr.set_options(keep_attrs=True):
+            da_obs = da_obs.where(~da_obs_mask.astype(bool))
+    if args.ifile_gcm_premask:
+        da_gcm_mask = lib.open_dataset(args.ifile_gcm_premask)[args.varname_gcm_premask]
+        logger.debug(f"Found this dataarray for masking the GCM input:")
+        logger.debug(da_gcm_mask)
+        with xr.set_options(keep_attrs=True):
+            da_gcm = da_gcm.where(~da_gcm_mask.astype(bool))
+    if args.ifile_rcm_premask:
+        da_rcm_mask = lib.open_dataset(args.ifile_rcm_premask)[args.varname_rcm_premask]
+        logger.debug(f"Found this dataarray for masking the RCM input:")
+        logger.debug(da_rcm_mask)
+        with xr.set_options(keep_attrs=True):
+            da_rcm = da_rcm.where(~da_rcm_mask.astype(bool))
 
     #< Cut all dataarrays to same time period
     logger.info(f"Selecting time period")
@@ -223,6 +251,7 @@ if __name__ == '__main__':
         'distributed.comm.timeouts.tcp': '60s',
         'distributed.comm.retry.count': 5,
         'distributed.scheduler.allowed-failures': 10,
+        "distributed.scheduler.worker-saturation": 1.1, #< This should use the new behaviour which helps with memory pile up
     })
 
     parser        = parse_arguments()
@@ -234,6 +263,7 @@ if __name__ == '__main__':
     memory_limit = os.getenv('MEMORY_LIMIT', memory_limit)
     client       = dask.distributed.Client(n_workers = nworkers, threads_per_worker = nthreads,
                                            memory_limit = memory_limit, local_directory = tempfile.mkdtemp(),
+                                           silence_logs = logging.ERROR,
                                         ) 
 
     #< Set the logging level
