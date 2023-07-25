@@ -110,9 +110,9 @@ def potential_added_value(da_gcm_hist, da_gcm_fut, da_rcm_hist, da_rcm_fut, proc
     #< Mask data
     if not region is None:
         logger.info("Masking X_gcm.")
-        X_gcm = lib_spatial.apply_region_mask(X_gcm, region)
+        X_gcm = lib_spatial.apply_region_mask(X_gcm, region.replace("_", " "))
         logger.info("Masking X_rcm.")
-        X_rcm = lib_spatial.apply_region_mask(X_rcm, region)
+        X_rcm = lib_spatial.apply_region_mask(X_rcm, region.replace("_", " "))
     #< AGCD mask
     if agcd_mask:
         logger.info("Masking X_gcm with AGCD mask")
@@ -126,9 +126,6 @@ def potential_added_value(da_gcm_hist, da_gcm_fut, da_rcm_hist, da_rcm_fut, proc
     else:
         assert False, f"Distance measure of {distance_measure} not implemented!"
     pav = fun(X_gcm, X_rcm)
-    #< Mask data
-    if not region is None:
-        pav = lib_spatial.apply_region_mask(pav, region.replace("_", " "))
     #< Convert av to a dataset
     pav = pav.to_dataset(name="pav")
     #< Return

@@ -213,28 +213,7 @@ def loop_av(args, gcm_files, rcm_files, obs_files, gcm_varname, rcm_varname, obs
     return Popen(cmd)
 
 
-def loop_av_norm(args, ofile_av, ofile_var, av_varname, var_varname, ofile, return_X=False, agcd_mask=False):
-    #< Get the cmd command
-    cmd = f"""
-    python added_value_norm.py --ifile-av {ofile_av} --ifile-var {ofile_var} 
-    --varname-av {av_varname} --varname-var {var_varname} 
-    --nworkers {args.nworkers} --nthreads {args.nthreads}
-    --ofile {ofile}
-    --log-level {args.loglevel}
-    --return-X False
-    """
-
-    if obs_varname == "precip":
-        cmd = cmd + """
-    --ifile-obs-premask /g/data/tp28/cst565/ACS_added_value/agcd_mask_0p8_larger1_1mask_0nomask.nc
-    --varname-obs-premask mask
-    """
-    cmd = cmd_split(cmd)
-    logger.debug(cmd)
-    return Popen(cmd)
-
-
-def loop_av_norm(args, gcm_hist_files, gcm_fut_files, rcm_hist_files, rcm_fut_files, gcm_varname, rcm_varname, ofile, return_X=False, agcd_mask=False):
+def loop_av_norm(args, ofile_av, ofile_var, av_varname, var_varname, ofile):
     #< Get the cmd command
     cmd = f"""
     python added_value_norm.py --ifile-av {ofile_av} --ifile-var {ofile_var} 
@@ -243,12 +222,6 @@ def loop_av_norm(args, gcm_hist_files, gcm_fut_files, rcm_hist_files, rcm_fut_fi
     --ofile {ofile}
     --log-level {args.loglevel}
     """
-
-    if agcd_mask:
-        cmd += " --agcd_mask"
-    if return_X:
-        cmd += " --return_X"
-
     cmd = cmd_split(cmd)
     logger.debug(cmd)
     return Popen(cmd)
@@ -286,7 +259,7 @@ def loop_pav(args, gcm_hist_files, gcm_fut_files, rcm_hist_files, rcm_fut_files,
     return Popen(cmd)
 
 
-def loop_var(args, obs_files, obs_varname, ofile, grouping="", dim=""):
+def loop_var(args, obs_files, obs_varname, ofile, grouping="", dim="", agcd_mask=False):
 
     #< Get the season
     season_cmd = season_loader(season=args.season)
@@ -306,11 +279,8 @@ def loop_var(args, obs_files, obs_varname, ofile, grouping="", dim=""):
     --ofile {ofile} 
     --log-level {args.loglevel} 
     """
-    if obs_varname == "precip":
-        cmd = cmd + """
-    --ifile-mask /g/data/tp28/cst565/ACS_added_value/agcd_mask_0p8_larger1_1mask_0nomask.nc
-    --varname-mask mask
-    """
+    if agcd_mask:
+        cmd += " --agcd_mask"
     cmd = cmd_split(cmd)
     logger.debug(cmd)
     return Popen(cmd)
@@ -441,7 +411,7 @@ def main():
                 #< Check if we need to calculate VAR
                 if av_measure == "variability" or av_measure == "realised_added_value" or av_measure == "added_value_norm" and (not os.path.isfile(ofile_var) or args.overwrite):
                     #< Collect processes
-                    processes.append( loop_var(args, obs_files, obs_varname, ofile_var, grouping=grouping, dim=variability_dim) )
+                    processes.append( loop_var(args, obs_files, obs_varname, ofile_var, grouping=grouping, dim=variability_dim, agcd_mask=args.agcd_mask) )
                 #< Check if processes are to be triggered
                 check_processes(processes, args)
     #< Trigger any left over processes before we start with realised added value

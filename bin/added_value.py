@@ -108,13 +108,13 @@ def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_mea
         #< Mask data
         if not region is None:
             logger.info("Masking X_obs.")
-            X_obs = lib_spatial.apply_region_mask(X_obs, args.region)
+            X_obs = lib_spatial.apply_region_mask(X_obs, region.replace("_", " "))
             logger.debug(X_obs)
             logger.info("Masking X_gcm.")
-            X_gcm = lib_spatial.apply_region_mask(X_gcm, args.region)
+            X_gcm = lib_spatial.apply_region_mask(X_gcm, region.replace("_", " "))
             logger.debug(X_gcm)
             logger.info("Masking X_rcm.")
-            X_rcm = lib_spatial.apply_region_mask(X_rcm, args.region)
+            X_rcm = lib_spatial.apply_region_mask(X_rcm, region.replace("_", " "))
             logger.debug(X_rcm)
             logger.debug("---------------------------------------------")
        #< AGCD mask
@@ -138,12 +138,6 @@ def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_mea
     av = fun(X_obs, X_gcm, X_rcm)
     logger.debug(av)
     logger.debug("---------------------------------------------")
-    #< Mask data
-    if not region is None:
-        logger.info("Masking added value.")
-        av = lib_spatial.apply_region_mask(av, region.replace("_", " "))
-        logger.debug(av)
-        logger.debug("---------------------------------------------")
     #< Convert av to a dataset
     av = av.to_dataset(name="av")
     #< Return

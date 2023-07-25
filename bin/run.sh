@@ -28,6 +28,11 @@ for gcm in ERA5 $gcm_list
 do
     for variable in tasmax tasmin pr
     do
+        if [ $variable = "pr" ]; then
+            cmd_add=" --agcd_mask"
+        else
+            cmd_add=""
+        fi
         for quantile in $high_quantiles
         do
             kwargs=$(echo {\"quantile\":$quantile})
@@ -46,7 +51,7 @@ do
                         --nworkers 3 --nthreads 1 --nprocs $nprocs \
                         --odir ${opath} \
                         --log-level ${LIB_LOGLEVEL} \
-                        --overwrite False
+                        --overwrite ${cmd_add}
         done
     done
 done
@@ -73,7 +78,7 @@ do
                         --nworkers 3 --nthreads 1 --nprocs $nprocs \
                         --odir ${opath} \
                         --log-level ${LIB_LOGLEVEL} \
-                        --overwrite False
+                        --overwrite
         done
     done
 done
@@ -82,6 +87,11 @@ for gcm in $gcm_list
 do
     for variable in tasmax tasmin pr
     do
+        if [ $variable = "pr" ]; then
+            cmd_add=" --agcd_mask"
+        else
+            cmd_add=""
+        fi
         for quantile in $high_quantiles
         do
             kwargs=$(echo {\"quantile\":$quantile})
@@ -100,7 +110,7 @@ do
                         --nworkers 3 --nthreads 1 --nprocs $nprocs \
                         --odir ${opath} \
                         --log-level ${LIB_LOGLEVEL} \
-                        --overwrite False
+                        --overwrite ${cmd_add}
         done
     done
 done
@@ -127,7 +137,7 @@ do
                         --nworkers 3 --nthreads 1 --nprocs $nprocs \
                         --odir ${opath} \
                         --log-level ${LIB_LOGLEVEL} \
-                        --overwrite False
+                        --overwrite
         done
     done
 done
