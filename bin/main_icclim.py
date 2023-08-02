@@ -87,18 +87,7 @@ def driving_model_loader(gcm, scen, freq, var):
         return cmip6_interface.get_cmip6_files(cmip6_name_dict[gcm], scen, freq, var), var
 ###        return cmip6_interface.get_cmip6_files(gcm, scen, freq, var), var
     elif gcm in ["ERA5"]:
-        era5_varname_dict = {
-            "tasmax": "tas",
-            "tasmin": "tas",
-            "pr": "pr",
-        }
-        era5_filenmame_dict = {
-            "tasmax": "tasmax",
-            "tasmin": "tasmin",
-            "pr": "prmean",
-        }
-        file_list = glob.glob(f"/g/data/tp28/ERA5/{era5_filenmame_dict[var]}_era5_oper_sfc_*.nc")
-        return file_list, era5_varname_dict[var]
+        return era5_interface.get_era5_files(freq, var), var
     else:
         raise Exception(f"Driving model {gcm} for {scen} not found!")
 
@@ -128,6 +117,8 @@ def rcm_model_loader(gcm, rcm, scen, freq, var):
             "CNRM-ESM2-1": "CNRM-CERFACS-CNRM-ESM2-1",
             "NorESM2-MM": "NCC-NorESM2-MM",
         }
+        if gcm == "ERA5":
+            scen = "evaluation"
         return ccam_drs_interface.get_ccam_files(ccam_name_dict[gcm], scen, freq, var), var
     else:
         logger.error(f"RCM {rcm} is not implemented!")
