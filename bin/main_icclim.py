@@ -16,11 +16,11 @@ import sys
 import warnings
 import lib
 import json
-import cmip6_interface
-import era5_interface
-import barpa_drs_interface
-import agcd_interface
-import ccam_drs_interface
+import cmip6_icclim_drs_interface as cmip6_interface
+import barpa_icclim_drs_interface as barpa_drs_interface
+import agcd_icclim_drs_interface as agcd_interface
+import ccam_icclim_drs_interface as ccam_drs_interface
+import era5_icclim_drs_interface as era5_interface
 from subprocess import Popen, PIPE
 
 
@@ -74,29 +74,38 @@ def parse_arguments():
 
 def driving_model_loader(gcm, scen, freq, var):
     if gcm in ["ACCESS-ESM1-5", "ACCESS-CM2", "EC-Earth3", "NorESM2-MM", "CMCC-ESM2", "CESM2"]:
-        return cmip6_interface.get_cmip6_files(gcm, scen, freq, var), var
+        cmip6_name_dict = {
+            "ERA5": "ECMWF-ERA5",
+            "ACCESS-CM2": "CSIRO-ARCCSS-ACCESS-CM2",
+            "ACCESS-ESM1-5": "CSIRO-ACCESS-ESM1-5",
+            "EC-Earth3": "EC-Earth-Consortium-EC-Earth3",
+            "CESM2": "NCAR-CESM2",
+            "CMCC-ESM2": "CMCC-CMCC-ESM2",
+            "CNRM-ESM2-1": "CNRM-CERFACS-CNRM-ESM2-1",
+            "NorESM2-MM": "NCC-NorESM2-MM",
+        }
+        return cmip6_interface.get_cmip6_files(cmip6_name_dict[gcm], scen, freq, var), var
+###        return cmip6_interface.get_cmip6_files(gcm, scen, freq, var), var
     elif gcm in ["ERA5"]:
-        era5_varname_dict = {
-            "tasmax": "tas",
-            "tasmin": "tas",
-            "pr": "pr",
-        }
-        era5_filenmame_dict = {
-            "tasmax": "tasmax",
-            "tasmin": "tasmin",
-            "pr": "prmean",
-        }
-        file_list = glob.glob(f"/g/data/tp28/ERA5/{era5_filenmame_dict[var]}_era5_oper_sfc_*.nc")
-        return file_list, era5_varname_dict[var]
+        return era5_interface.get_era5_files(freq, var), var
     else:
         raise Exception(f"Driving model {gcm} for {scen} not found!")
 
 
 def rcm_model_loader(gcm, rcm, scen, freq, var):
     if rcm == "BARPA-R":
+        barpa_name_dict = {
+            "ERA5": "ECMWF-ERA5",
+            "ACCESS-ESM1-5": "CSIRO-ACCESS-ESM1-5",
+            "ACCESS-CM2": "CSIRO-ARCCSS-ACCESS-CM2",
+            "EC-Earth3": "EC-Earth-Consortium-EC-Earth3",
+            "NorESM2-MM": "NCC-NorESM2-MM",
+            "CMCC-ESM2": "CMCC-CMCC-ESM2",
+            "CESM2": "NCAR-CESM2",
+        }
         if gcm == "ERA5":
             scen = "evaluation"
-        return barpa_drs_interface.get_barpa_files(gcm, scen, freq, var), var
+        return barpa_drs_interface.get_barpa_files(barpa_name_dict[gcm], scen, freq, var), var
     elif rcm == "CCAM":
         ccam_name_dict = {
             "ERA5": "ECMWF-ERA5",
@@ -118,16 +127,7 @@ def rcm_model_loader(gcm, rcm, scen, freq, var):
 
 def ref_loader(obs, freq, var):
     if obs == "AGCD":
-        agcd_freq_dict = {
-            "day": "daily",
-        }
-        agcd_varname_dict = {
-            "tasmax": "tmax",
-            "tasmin": "tmin",
-            "pr": "precip",
-        }
-        subversion='total' if var == 'pr' else "mean"
-        return agcd_interface.get_files(agcd_freq_dict[freq], agcd_varname_dict[var], subversion=subversion), agcd_varname_dict[var]
+        return agcd_interface.get_agcd_files(freq, var), var
     else:
         logger.error(f"Observations {args.obs} is not implemented!")
         exit(1)
@@ -199,14 +199,35 @@ def loop_av(args, gcm_files, rcm_files, obs_files, gcm_varname, rcm_varname, obs
     if agcd_mask:
         cmd += " --agcd_mask"
     if return_X:
-        cmd += " --return-X"
+        cmd += " --return_X"
         
     cmd = cmd_split(cmd)
     logger.debug(cmd)
     return Popen(cmd)
 
 
-def loop_av_norm(args, ofile_av, ofile_var, av_varname, var_varname, ofile):
+def loop_av_norm(args, ofile_av, ofile_var, av_varname, var_varname, ofile, return_X=False, agcd_mask=False):
+    #< Get the cmd command
+    cmd = f"""
+    python added_value_norm.py --ifile-av {ofile_av} --ifile-var {ofile_var} 
+    --varname-av {av_varname} --varname-var {var_varname} 
+    --nworkers {args.nworkers} --nthreads {args.nthreads}
+    --ofile {ofile}
+    --log-level {args.loglevel}
+    --return-X False
+    """
+
+    if obs_varname == "precip":
+        cmd = cmd + """
+    --ifile-obs-premask /g/data/tp28/cst565/ACS_added_value/agcd_mask_0p8_larger1_1mask_0nomask.nc
+    --varname-obs-premask mask
+    """
+    cmd = cmd_split(cmd)
+    logger.debug(cmd)
+    return Popen(cmd)
+
+
+def loop_av_norm(args, gcm_hist_files, gcm_fut_files, rcm_hist_files, rcm_fut_files, gcm_varname, rcm_varname, ofile, return_X=False, agcd_mask=False):
     #< Get the cmd command
     cmd = f"""
     python added_value_norm.py --ifile-av {ofile_av} --ifile-var {ofile_var} 
@@ -215,6 +236,12 @@ def loop_av_norm(args, ofile_av, ofile_var, av_varname, var_varname, ofile):
     --ofile {ofile}
     --log-level {args.loglevel}
     """
+
+    if agcd_mask:
+        cmd += " --agcd_mask"
+    if return_X:
+        cmd += " --return_X"
+
     cmd = cmd_split(cmd)
     logger.debug(cmd)
     return Popen(cmd)
@@ -245,14 +272,14 @@ def loop_pav(args, gcm_hist_files, gcm_fut_files, rcm_hist_files, rcm_fut_files,
     if agcd_mask:
         cmd += " --agcd_mask"
     if return_X:
-        cmd += " --return-X"
+        cmd += " --return_X"
 
     cmd = cmd_split(cmd)
     logger.debug(cmd)
     return Popen(cmd)
 
 
-def loop_var(args, obs_files, obs_varname, ofile, grouping="", dim="", agcd_mask=False):
+def loop_var(args, obs_files, obs_varname, ofile, grouping="", dim=""):
 
     #< Get the season
     season_cmd = season_loader(season=args.season)
@@ -272,8 +299,11 @@ def loop_var(args, obs_files, obs_varname, ofile, grouping="", dim="", agcd_mask
     --ofile {ofile} 
     --log-level {args.loglevel} 
     """
-    if agcd_mask:
-        cmd += " --agcd_mask"
+    if obs_varname == "precip":
+        cmd = cmd + """
+    --ifile-mask /g/data/tp28/cst565/ACS_added_value/agcd_mask_0p8_larger1_1mask_0nomask.nc
+    --varname-mask mask
+    """
     cmd = cmd_split(cmd)
     logger.debug(cmd)
     return Popen(cmd)
@@ -404,7 +434,7 @@ def main():
                 #< Check if we need to calculate VAR
                 if av_measure == "variability" or av_measure == "realised_added_value" or av_measure == "added_value_norm" and (not os.path.isfile(ofile_var) or args.overwrite):
                     #< Collect processes
-                    processes.append( loop_var(args, obs_files, obs_varname, ofile_var, grouping=grouping, dim=variability_dim, agcd_mask=args.agcd_mask) )
+                    processes.append( loop_var(args, obs_files, obs_varname, ofile_var, grouping=grouping, dim=variability_dim) )
                 #< Check if processes are to be triggered
                 check_processes(processes, args)
     #< Trigger any left over processes before we start with realised added value
