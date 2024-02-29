@@ -252,7 +252,7 @@ def main():
 if __name__ == '__main__':
 
     dask.config.set({
-        'array.chunk-size': "512 MiB",
+        'array.chunk-size': "1024 MiB",
         'distributed.comm.timeouts.connect': '60s',
         'distributed.comm.timeouts.tcp': '60s',
         'distributed.comm.retry.count': 5,
@@ -265,7 +265,10 @@ if __name__ == '__main__':
     nthreads     = args.nthreads
     nworkers     = args.nworkers
 
-    memory_limit = '1000mb' if os.environ["HOSTNAME"].startswith("gadi-login") else int(os.environ["PBS_VMEM"]) / nworkers
+    try:
+        memory_limit = '1000mb' if os.environ["HOSTNAME"].startswith("gadi-login") else int(os.environ["PBS_VMEM"]) / nworkers
+    except:
+        memory_limit = None
     memory_limit = os.getenv('MEMORY_LIMIT', memory_limit)
     client       = dask.distributed.Client(n_workers = nworkers, threads_per_worker = nthreads,
                                            memory_limit = memory_limit, local_directory = tempfile.mkdtemp(),
