@@ -94,18 +94,9 @@ def driving_model_loader(gcm, scen, freq, var):
 
 def rcm_model_loader(gcm, rcm, scen, freq, var):
     if rcm == "BARPA-R":
-        barpa_name_dict = {
-            "ERA5": "ECMWF-ERA5",
-            "ACCESS-ESM1-5": "CSIRO-ACCESS-ESM1-5",
-            "ACCESS-CM2": "CSIRO-ARCCSS-ACCESS-CM2",
-            "EC-Earth3": "EC-Earth-Consortium-EC-Earth3",
-            "NorESM2-MM": "NCC-NorESM2-MM",
-            "CMCC-ESM2": "CMCC-CMCC-ESM2",
-            "CESM2": "NCAR-CESM2",
-        }
         if gcm == "ERA5":
             scen = "evaluation"
-        return barpa_drs_interface.get_barpa_files(barpa_name_dict[gcm], scen, freq, var), var
+        return barpa_drs_interface.get_barpa_files(gcm, scen, freq, var), var
     elif rcm == "CCAM":
         ccam_name_dict = {
             "ERA5": "ECMWF-ERA5",
@@ -208,7 +199,7 @@ def loop_av(args, gcm_files, rcm_files, obs_files, gcm_varname, rcm_varname, obs
     if agcd_mask:
         cmd += " --agcd_mask"
     if return_X:
-        cmd += " --return_X"
+        cmd += " --return-X"
         
     cmd = cmd_split(cmd)
     logger.debug(cmd)
@@ -254,7 +245,7 @@ def loop_pav(args, gcm_hist_files, gcm_fut_files, rcm_hist_files, rcm_fut_files,
     if agcd_mask:
         cmd += " --agcd_mask"
     if return_X:
-        cmd += " --return_X"
+        cmd += " --return-X"
 
     cmd = cmd_split(cmd)
     logger.debug(cmd)
