@@ -15,43 +15,52 @@ cd /home/565/cst565/ACS/added-value-evaluation/bin
 
 high_quantiles="0.9 0.95 0.99 0.999"
 low_quantiles="0.1 0.05 0.01 0.001"
-gcm_list="ACCESS-ESM1-5 ACCESS-CM2 EC-Earth3 NorESM2-MM CMCC-ESM2"
+rcm="BARPA-R"
+gcm_list="ACCESS-ESM1-5 ACCESS-CM2 EC-Earth3 NorESM2-MM CMCC-ESM2" # No tasmax/tasmin for CESM2???
+# rcm="CCAM"
+# gcm_list="ACCESS-CM2"
+
 # regions="Australia"
 regions="Australia Coastline_Australia_100km Topography_Australia_500"
+nrm_regions="Southern_Slopes Murray_Basin Southern_and_South_Western_Flatlands Central_Slopes East_Coast Rangelands Monsoonal_North Wet_Tropics"
+regions="$regions $nrm_regions"
+
+
 opath="/g/data/tp28/cst565/ACS_added_value"
 
 export PYTHONPATH=/home/565/cst565/ACS/BARPA_evaluation/lib:$PYTHONPATH
-export LIB_LOGLEVEL="WARN"
-nprocs=2
+export LIB_LOGLEVEL="DEBUG"
+nprocs=3
+
 
 for gcm in ERA5 $gcm_list
 do
     for variable in tasmax tasmin pr
     do
-        if [ $variable = "pr" ]; then
-            cmd_add=" --agcd_mask"
-        else
-            cmd_add=""
-        fi
         for quantile in $high_quantiles
         do
+            cmd_add=""
+            if [ $variable = "pr" ]; then
+                cmd_add="${cmd_add} --agcd_mask"
+            fi
             kwargs=$(echo {\"quantile\":$quantile})
             echo ======================================================
             echo $(date +"%T") - ${gcm} - ${variable} - ${quantile}
             echo ======================================================
-            python main.py --gcm ${gcm} --rcm BARPA-R --obs AGCD \
+            python main.py --gcm ${gcm} --rcm ${rcm} --obs AGCD \
                         --scenario-hist historical --scenario-fut ssp370 \
                         --variable ${variable} --freq day \
-                        --av-measures added_value_norm \
+                        --av-measures added_value \
                         --regions ${regions} --seasons annual JJA DJF SON MAM \
-                        --process quantile --process-kwargs $kwargs --av-distance-measure AVse --pav-distance-measure PAVdiff \
+                        --process quantile --process-kwargs $kwargs --av-distance-measure AVcorr --pav-distance-measure PAVdiff \
                         --lat0 -45 --lat1 -9 --lon0 110 --lon1 160 \
                         --datestart-hist 19850101 --dateend-hist 20141231 \
                         --datestart-fut 20700101 --dateend-fut 20991231 \
-                        --nworkers 3 --nthreads 1 --nprocs $nprocs \
+                        --nworkers 7 --nthreads 1 --nprocs $nprocs \
                         --odir ${opath} \
+                        --return-X \
                         --log-level ${LIB_LOGLEVEL} \
-                        --overwrite ${cmd_add}
+                        ${cmd_add}
         done
     done
 done
@@ -66,19 +75,19 @@ do
             echo ======================================================
             echo $(date +"%T") - ${gcm} - ${variable} - ${quantile}
             echo ======================================================
-            python main.py --gcm ${gcm} --rcm BARPA-R --obs AGCD \
+            python main.py --gcm ${gcm} --rcm ${rcm} --obs AGCD \
                         --scenario-hist historical --scenario-fut ssp370 \
                         --variable ${variable} --freq day \
-                        --av-measures added_value_norm \
+                        --av-measures added_value \
                         --regions ${regions} --seasons annual JJA DJF SON MAM \
-                        --process quantile --process-kwargs $kwargs --av-distance-measure AVse --pav-distance-measure PAVdiff \
+                        --process quantile --process-kwargs $kwargs --av-distance-measure AVcorr --pav-distance-measure PAVdiff \
                         --lat0 -45 --lat1 -9 --lon0 110 --lon1 160 \
                         --datestart-hist 19850101 --dateend-hist 20141231 \
                         --datestart-fut 20700101 --dateend-fut 20991231 \
-                        --nworkers 3 --nthreads 1 --nprocs $nprocs \
+                        --nworkers 7 --nthreads 1 --nprocs $nprocs \
                         --odir ${opath} \
-                        --log-level ${LIB_LOGLEVEL} \
-                        --overwrite
+                        --return-X \
+                        --log-level ${LIB_LOGLEVEL}
         done
     done
 done
@@ -87,30 +96,30 @@ for gcm in $gcm_list
 do
     for variable in tasmax tasmin pr
     do
-        if [ $variable = "pr" ]; then
-            cmd_add=" --agcd_mask"
-        else
-            cmd_add=""
-        fi
         for quantile in $high_quantiles
         do
+            cmd_add=""
+            if [ $variable = "pr" ]; then
+                cmd_add="${cmd_add} --agcd_mask"
+            fi
             kwargs=$(echo {\"quantile\":$quantile})
             echo ======================================================
             echo $(date +"%T") - ${gcm} - ${variable} - ${quantile}
             echo ======================================================
-            python main.py --gcm ${gcm} --rcm BARPA-R --obs AGCD \
+            python main.py --gcm ${gcm} --rcm ${rcm} --obs AGCD \
                         --scenario-hist historical --scenario-fut ssp370 \
                         --variable ${variable} --freq day \
                         --av-measures realised_added_value \
                         --regions ${regions} --seasons annual JJA DJF SON MAM \
-                        --process quantile --process-kwargs $kwargs --av-distance-measure AVse --pav-distance-measure PAVdiff \
+                        --process quantile --process-kwargs $kwargs --av-distance-measure AVcorr --pav-distance-measure PAVdiff \
                         --lat0 -45 --lat1 -9 --lon0 110 --lon1 160 \
                         --datestart-hist 19850101 --dateend-hist 20141231 \
                         --datestart-fut 20700101 --dateend-fut 20991231 \
-                        --nworkers 3 --nthreads 1 --nprocs $nprocs \
+                        --nworkers 7 --nthreads 1 --nprocs $nprocs \
                         --odir ${opath} \
+                        --return-X \
                         --log-level ${LIB_LOGLEVEL} \
-                        --overwrite ${cmd_add}
+                        ${cmd_add}
         done
     done
 done
@@ -125,19 +134,19 @@ do
             echo ======================================================
             echo $(date +"%T") - ${gcm} - ${variable} - ${quantile}
             echo ======================================================
-            python main.py --gcm ${gcm} --rcm BARPA-R --obs AGCD \
+            python main.py --gcm ${gcm} --rcm ${rcm} --obs AGCD \
                         --scenario-hist historical --scenario-fut ssp370 \
                         --variable ${variable} --freq day \
                         --av-measures realised_added_value \
                         --regions ${regions} --seasons annual JJA DJF SON MAM \
-                        --process quantile --process-kwargs $kwargs --av-distance-measure AVse --pav-distance-measure PAVdiff \
+                        --process quantile --process-kwargs $kwargs --av-distance-measure AVcorr --pav-distance-measure PAVdiff \
                         --lat0 -45 --lat1 -9 --lon0 110 --lon1 160 \
                         --datestart-hist 19850101 --dateend-hist 20141231 \
                         --datestart-fut 20700101 --dateend-fut 20991231 \
-                        --nworkers 3 --nthreads 1 --nprocs $nprocs \
+                        --nworkers 7 --nthreads 1 --nprocs $nprocs \
                         --odir ${opath} \
-                        --log-level ${LIB_LOGLEVEL} \
-                        --overwrite
+                        --return-X \
+                        --log-level ${LIB_LOGLEVEL}
         done
     done
 done
