@@ -60,7 +60,7 @@ def parse_arguments():
     parser.add_argument("--lon0", dest='lon0', nargs='?', type=float, default=-999, help="Lower longitude to select")
     parser.add_argument("--lon1", dest='lon1', nargs='?', type=float, default=-999, help="Upper longitude to select")
 
-    parser.add_argument("--return-X", dest='return_X', action='store_true', help="Also return the regridded climate statistics")
+    parser.add_argument("--reuse-X", dest='reuse_X', action='store_true', help="Reuse the regridded climate statistics")
     parser.add_argument("--agcd_mask", dest='agcd_mask', action='store_true', help='Whether to apply masking for AGCD precipitation data')
 
     parser.add_argument("--nthreads", dest='nthreads', nargs='?', type=int, const='', default=1, help="Number of threads.")
@@ -176,7 +176,7 @@ def season_loader(season=""):
     return season_pairs
 
 
-def loop_av(args, gcm_files, rcm_files, obs_files, gcm_varname, rcm_varname, obs_varname, ofile, return_X=False, agcd_mask=False):
+def loop_av(args, gcm_files, rcm_files, obs_files, gcm_varname, rcm_varname, obs_varname, ofile, ifile_X_gcm=None, ifile_X_rcm=None, ifile_X_obs=None, agcd_mask=False, reuse_X=True):
 
     #< Get the season
     season_cmd = season_loader(season=args.season)
@@ -193,13 +193,14 @@ def loop_av(args, gcm_files, rcm_files, obs_files, gcm_varname, rcm_varname, obs
     --lat0 {args.lat0} --lat1 {args.lat1}
     --lon0 {args.lon0} --lon1 {args.lon1}
     --ofile {ofile}
+    --ifile-X-gcm {ifile_X_gcm} --ifile-X-rcm {ifile_X_rcm} --ifile-X-obs {ifile_X_obs}
     --log-level {args.loglevel}
     """
 
     if agcd_mask:
         cmd += " --agcd_mask"
-    if return_X:
-        cmd += " --return-X"
+    if reuse_X:
+        cmd += " --reuse-X"
         
     cmd = cmd_split(cmd)
     logger.debug(cmd)
@@ -221,7 +222,8 @@ def loop_av_norm(args, ofile_av, ofile_var, av_varname, var_varname, ofile):
 
 
 
-def loop_pav(args, gcm_hist_files, gcm_fut_files, rcm_hist_files, rcm_fut_files, gcm_varname, rcm_varname, ofile, return_X=False, agcd_mask=False):
+def loop_pav(args, gcm_hist_files, gcm_fut_files, rcm_hist_files, rcm_fut_files, gcm_varname, rcm_varname, ofile, reuse_X=False, agcd_mask=False,
+            ifile_X_gcm_hist=None, ifile_X_gcm_fut=None, ifile_X_rcm_hist=None, ifile_X_rcm_fut=None):
     #< Get the season
     season_cmd = season_loader(season=args.season)
 
@@ -239,13 +241,14 @@ def loop_pav(args, gcm_hist_files, gcm_fut_files, rcm_hist_files, rcm_fut_files,
     --lat0 {args.lat0} --lat1 {args.lat1}
     --lon0 {args.lon0} --lon1 {args.lon1}
     --ofile {ofile}
+    --ifile-X-gcm-hist {ifile_X_gcm_hist} --ifile-X-gcm-fut {ifile_X_gcm_fut} --ifile-X-rcm-hist {ifile_X_rcm_hist} --ifile-X-rcm-fut {ifile_X_rcm_fut}
     --log-level {args.loglevel}
     """
 
     if agcd_mask:
         cmd += " --agcd_mask"
-    if return_X:
-        cmd += " --return-X"
+    if reuse_X:
+        cmd += " --reuse-X"
 
     cmd = cmd_split(cmd)
     logger.debug(cmd)
@@ -310,6 +313,8 @@ def tidy_filename(filename):
     #< Replace double underscore with single underscore
     while "__" in filename:
         filename = filename.replace("__", "_")
+    if os.path.basename(filename).startswith("_"):
+        filename = os.path.join(os.path.dirname(filename), os.path.basename(filename)[1:])
     return filename
 
 def get_ofile(odir="./", measure="", variable="", gcm="", scenario="", rcm="", obs="", freq="", region="", season="", datestart_hist="", dateend_hist="", datestart_fut="", dateend_fut="", kwargs=dict()):
@@ -366,10 +371,27 @@ def main():
             args.region = region
             for av_measure in args.av_measures:
                 ofile_av = get_ofile(odir=args.odir, measure=args.av_distance_measure, variable=args.variable, gcm=args.gcm, scenario=args.scenario_hist, rcm=args.rcm, obs=args.obs, freq=args.freq, region=args.region, season=args.season, datestart_hist=args.datestart_hist, dateend_hist=args.dateend_hist, kwargs=json.loads(args.process_kwargs))
+                ofile_X_gcm = get_ofile(odir=args.odir, measure="", variable=args.variable, gcm=args.gcm, scenario=args.scenario_hist, rcm="", obs="", freq=args.freq, region=args.region, season=args.season, datestart_hist=args.datestart_hist, dateend_hist=args.dateend_hist, kwargs=json.loads(args.process_kwargs))
+                ofile_X_rcm = get_ofile(odir=args.odir, measure="", variable=args.variable, gcm="", scenario=args.scenario_hist, rcm=args.rcm, obs="", freq=args.freq, region=args.region, season=args.season, datestart_hist=args.datestart_hist, dateend_hist=args.dateend_hist, kwargs=json.loads(args.process_kwargs))
+                ofile_X_obs = get_ofile(odir=args.odir, measure="", variable=args.variable, gcm="", scenario=args.scenario_hist, rcm="", obs=args.obs, freq=args.freq, region=args.region, season=args.season, datestart_hist=args.datestart_hist, dateend_hist=args.dateend_hist, kwargs=json.loads(args.process_kwargs))
                 #< Check if we need to calculate AV
                 if (av_measure == "added_value" or av_measure == "realised_added_value" or av_measure == "added_value_norm") and (not os.path.isfile(ofile_av) or args.overwrite):
                     #< Collect processes
-                    processes.append( loop_av(args, gcm_files_hist, rcm_files_hist, obs_files, gcm_varname, rcm_varname, obs_varname, ofile_av, return_X=args.return_X, agcd_mask=args.agcd_mask) )
+                    processes.append( loop_av(args,
+                                            gcm_files_hist,
+                                            rcm_files_hist,
+                                            obs_files,
+                                            gcm_varname,
+                                            rcm_varname,
+                                            obs_varname,
+                                            ofile_av,
+                                            reuse_X=args.reuse_X,
+                                            agcd_mask=args.agcd_mask,
+                                            ifile_X_gcm=ofile_X_gcm,
+                                            ifile_X_rcm=ofile_X_rcm,
+                                            ifile_X_obs=ofile_X_obs,
+                                        ) 
+                    )
                 #< Check if processes are to be triggered
                 check_processes(processes, args)
 
@@ -380,11 +402,15 @@ def main():
         for region in args.regions:
             args.region = region
             for av_measure in args.av_measures:
+                ofile_X_gcm_hist = get_ofile(odir=args.odir, measure="", variable=args.variable, gcm=args.gcm, scenario=args.scenario_hist, rcm="", obs="", freq=args.freq, region=args.region, season=args.season, datestart_hist=args.datestart_hist, dateend_hist=args.dateend_hist, kwargs=json.loads(args.process_kwargs))
+                ofile_X_gcm_fut = get_ofile(odir=args.odir, measure="", variable=args.variable, gcm=args.gcm, scenario=args.scenario_fut, rcm="", obs="", freq=args.freq, region=args.region, season=args.season, datestart_fut=args.datestart_fut, dateend_fut=args.dateend_fut, kwargs=json.loads(args.process_kwargs))
+                ofile_X_rcm_hist = get_ofile(odir=args.odir, measure="", variable=args.variable, gcm="", scenario=args.scenario_hist, rcm=args.rcm, obs="", freq=args.freq, region=args.region, season=args.season, datestart_hist=args.datestart_hist, dateend_hist=args.dateend_hist, kwargs=json.loads(args.process_kwargs))
+                ofile_X_rcm_fut = get_ofile(odir=args.odir, measure="", variable=args.variable, gcm="", scenario=args.scenario_fut, rcm=args.rcm, obs="", freq=args.freq, region=args.region, season=args.season, datestart_fut=args.datestart_fut, dateend_fut=args.dateend_fut, kwargs=json.loads(args.process_kwargs))
                 ofile_pav = get_ofile(odir=args.odir, measure=args.pav_distance_measure, variable=args.variable, gcm=args.gcm, scenario=args.scenario_fut, rcm=args.rcm, freq=args.freq, region=args.region, season=args.season, datestart_hist=args.datestart_hist, dateend_hist=args.dateend_hist, datestart_fut=args.datestart_fut, dateend_fut=args.dateend_fut, kwargs=json.loads(args.process_kwargs))
                 #< Check if we need to calculate PAV
                 if (av_measure == "potential_added_value" or av_measure == "realised_added_value") and (not os.path.isfile(ofile_pav) or args.overwrite):
                     #< Collect processes
-                    processes.append( loop_pav(args, gcm_files_hist, gcm_files_fut, rcm_files_hist, rcm_files_fut, gcm_varname, rcm_varname, ofile_pav, return_X=args.return_X, agcd_mask=args.agcd_mask) )
+                    processes.append( loop_pav(args, gcm_files_hist, gcm_files_fut, rcm_files_hist, rcm_files_fut, gcm_varname, rcm_varname, ofile_pav, reuse_X=args.reuse_X, agcd_mask=args.agcd_mask, ifile_X_gcm_hist=ofile_X_gcm_hist, ifile_X_gcm_fut=ofile_X_gcm_fut, ifile_X_rcm_hist=ofile_X_rcm_hist, ifile_X_rcm_fut=ofile_X_rcm_fut) )
                 #< Check if processes are to be triggered
                 check_processes(processes, args)
 
@@ -402,7 +428,7 @@ def main():
                     variability_dim = "year"
                 ofile_var = get_ofile(odir=args.odir, measure="VAR", variable=args.variable, obs=args.obs, freq=args.freq, region=args.region, season=args.season, datestart_hist=args.datestart_hist, dateend_hist=args.dateend_hist, kwargs=json.loads(args.process_kwargs))
                 #< Check if we need to calculate VAR
-                if av_measure == "variability" or av_measure == "realised_added_value" or av_measure == "added_value_norm" and (not os.path.isfile(ofile_var) or args.overwrite):
+                if (av_measure == "variability" or av_measure == "realised_added_value" or av_measure == "added_value_norm") and (not os.path.isfile(ofile_var) or args.overwrite):
                     #< Collect processes
                     processes.append( loop_var(args, obs_files, obs_varname, ofile_var, grouping=grouping, dim=variability_dim, agcd_mask=args.agcd_mask) )
                 #< Check if processes are to be triggered

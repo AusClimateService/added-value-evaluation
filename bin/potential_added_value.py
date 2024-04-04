@@ -55,7 +55,11 @@ def parse_arguments():
     parser.add_argument("--lon0", dest='lon0', nargs='?', type=float, default=-999, help="Lower longitude to select")
     parser.add_argument("--lon1", dest='lon1', nargs='?', type=float, default=-999, help="Upper longitude to select")
 
-    parser.add_argument("--return-X", dest='return_X', action='store_true', help="Also return the regridded climate statistics")
+    parser.add_argument("--reuse-X", dest='reuse_X', action='store_true', help="Reuse the regridded climate statistics")
+    parser.add_argument("--ifile-X-gcm-hist", nargs='?', type=str, default=None, help="Input statistic historical GCM file")
+    parser.add_argument("--ifile-X-gcm-fut", nargs='?', type=str, default=None, help="Input statistic future GCM file")
+    parser.add_argument("--ifile-X-rcm-hist", nargs='?', type=str, default=None, help="Input statistic historical RCM file")
+    parser.add_argument("--ifile-X-rcm-fut", nargs='?', type=str, default=None, help="Input statistic future RCM file")
 
     parser.add_argument("--nthreads", dest='nthreads', nargs='?', type=int, const='', default=1, help="Number of threads.")
     parser.add_argument("--nworkers", dest='nworkers', nargs='?', type=int, const='', default=2, help="Number of workers.")
@@ -66,7 +70,8 @@ def parse_arguments():
 
 
 
-def potential_added_value(da_gcm_hist, da_gcm_fut, da_rcm_hist, da_rcm_fut, process, process_kwargs={}, distance_measure="PAVdiff", region=None, return_X=False, agcd_mask=False):
+def potential_added_value(da_gcm_hist, da_gcm_fut, da_rcm_hist, da_rcm_fut, process, process_kwargs={}, distance_measure="PAVdiff", region=None, reuse_X=False, agcd_mask=False,
+                        ifile_X_rcm_hist=None, ifile_X_rcm_fut=None, ifile_X_gcm_hist=None, ifile_X_gcm_fut=None):
     """Calculate potential added value statistic from driving model (da_gcm) and regional model (da_rcm) dataarray
 
     Args:
@@ -96,29 +101,102 @@ def potential_added_value(da_gcm_hist, da_gcm_fut, da_rcm_hist, da_rcm_fut, proc
         fun = getattr(lib, process)
     else:
         assert False, f"{process} not implemented!"
-    logger.info(f"Calculating {process}")
-    X_gcm_hist = fun(da_gcm_hist, **process_kwargs)
-    X_gcm_fut = fun(da_gcm_fut, **process_kwargs)
-    X_rcm_hist = fun(da_rcm_hist, **process_kwargs)
-    X_rcm_fut = fun(da_rcm_fut, **process_kwargs)
-    # Get the response
+
+    
+    if reuse_X and os.path.isfile(ifile_X_rcm_hist):
+        logger.info(f"Using existing {ifile_X_rcm_hist} for RCM ")
+        X_rcm_hist = xr.open_dataarray(ifile_X_rcm_hist)
+        logger.debug(X_rcm_hist)
+    elif not reuse_X or not os.path.isfile(ifile_X_rcm_hist):
+        logger.info(f"Calculating {process} for RCM")
+        X_rcm_hist = fun(da_rcm_hist, **process_kwargs)
+        #< Mask data
+        if not region is None:
+            logger.info("Masking X_rcm_hist.")
+            X_rcm_hist = lib_spatial.apply_region_mask(X_rcm_hist, region.replace("_", " "))
+            logger.debug(X_rcm_hist)
+        #< AGCD mask
+        if agcd_mask:
+            logger.info("Masking X_rcm_hist with AGCD mask")
+            X_rcm_hist = lib_spatial.apply_agcd_data_mask(X_rcm_hist)
+            logger.debug(X_rcm_hist)
+    if reuse_X and not os.path.isfile(ifile_X_rcm_hist):
+        logger.info(f"Saving {ifile_X_rcm_hist} for RCM to netcdf")
+        lib.write2nc(X_rcm_hist, ifile_X_rcm_hist)
+
+    if reuse_X and os.path.isfile(ifile_X_rcm_fut):
+        logger.info(f"Using existing {ifile_X_rcm_fut} for RCM ")
+        X_rcm_fut = xr.open_dataarray(ifile_X_rcm_fut)
+        logger.debug(X_rcm_fut)
+    elif not reuse_X or not os.path.isfile(ifile_X_rcm_fut):
+        logger.info(f"Calculating {process} for RCM")
+        X_rcm_fut = fun(da_rcm_fut, **process_kwargs)
+        #< Mask data
+        if not region is None:
+            logger.info("Masking X_rcm_fut.")
+            X_rcm_fut = lib_spatial.apply_region_mask(X_rcm_fut, region.replace("_", " "))
+            logger.debug(X_rcm_fut)
+        #< AGCD mask
+        if agcd_mask:
+            logger.info("Masking X_rcm_fut with AGCD mask")
+            X_rcm_fut = lib_spatial.apply_agcd_data_mask(X_rcm_fut)
+            logger.debug(X_rcm_fut)
+    if reuse_X and not os.path.isfile(ifile_X_rcm_fut):
+        logger.info(f"Saving {ifile_X_rcm_fut} for RCM to netcdf")
+        lib.write2nc(X_rcm_fut, ifile_X_rcm_fut)
+    
+
+    if reuse_X and os.path.isfile(ifile_X_gcm_hist):
+        logger.info(f"Using existing {ifile_X_gcm_hist} for GCM ")
+        X_gcm_hist = xr.open_dataarray(ifile_X_gcm_hist)
+        logger.debug(X_gcm_hist)
+    elif not reuse_X or not os.path.isfile(ifile_X_gcm_hist):
+        logger.info(f"Calculating {process} for GCM")
+        X_gcm_hist = fun(da_gcm_hist, **process_kwargs)
+        logger.info(f"Regridding GCM data to RCM grid")
+        X_gcm_hist = lib.regrid(X_gcm_hist, X_rcm_hist)
+        #< Mask data
+        if not region is None:
+            logger.info("Masking X_gcm_hist.")
+            X_gcm_hist = lib_spatial.apply_region_mask(X_gcm_hist, region.replace("_", " "))
+            logger.debug(X_gcm_hist)
+        #< AGCD mask
+        if agcd_mask:
+            logger.info("Masking X_gcm_hist with AGCD mask")
+            X_gcm_hist = lib_spatial.apply_agcd_data_mask(X_gcm_hist)
+            logger.debug(X_gcm_hist)
+    if reuse_X and not os.path.isfile(ifile_X_gcm_hist):
+        logger.info(f"Saving {ifile_X_gcm_hist} for GCM to netcdf")
+        lib.write2nc(X_gcm_hist, ifile_X_gcm_hist)
+    
+    if reuse_X and os.path.isfile(ifile_X_gcm_fut):
+        logger.info(f"Using existing {ifile_X_gcm_fut} for GCM ")
+        X_gcm_fut = xr.open_dataset(ifile_X_gcm_fut).to_dataarray()
+        logger.debug(X_gcm_fut)
+    elif not reuse_X or not os.path.isfile(ifile_X_gcm_fut):
+        logger.info(f"Calculating {process} for GCM")
+        X_gcm_fut = fun(da_gcm_fut, **process_kwargs)
+        logger.info(f"Regridding GCM data to RCM grid")
+        X_gcm_fut = lib.regrid(X_gcm_fut, X_rcm_hist)
+        #< Mask data
+        if not region is None:
+            logger.info("Masking X_gcm_fut.")
+            X_gcm_fut = lib_spatial.apply_region_mask(X_gcm_fut, region.replace("_", " "))
+            logger.debug(X_gcm_fut)
+        #< AGCD mask
+        if agcd_mask:
+            logger.info("Masking X_gcm_fut with AGCD mask")
+            X_gcm_fut = lib_spatial.apply_agcd_data_mask(X_gcm_fut)
+            logger.debug(X_gcm_fut)
+    if reuse_X and not os.path.isfile(ifile_X_gcm_fut):
+        logger.info(f"Saving {ifile_X_gcm_fut} for GCM to netcdf")
+        lib.write2nc(X_gcm_fut, ifile_X_gcm_fut)
+
+    # Calculate change
     X_gcm = X_gcm_fut - X_gcm_hist
     X_rcm = X_rcm_fut - X_rcm_hist
-    #< Regrid all quantiles to the RCM resolution
-    logger.info(f"Regridding GCM data to RCM grid")
-    X_gcm = lib.regrid(X_gcm, X_rcm)
-    #< Mask data
-    if not region is None:
-        logger.info("Masking X_gcm.")
-        X_gcm = lib_spatial.apply_region_mask(X_gcm, region.replace("_", " "))
-        logger.info("Masking X_rcm.")
-        X_rcm = lib_spatial.apply_region_mask(X_rcm, region.replace("_", " "))
-    #< AGCD mask
-    if agcd_mask:
-        logger.info("Masking X_gcm with AGCD mask")
-        X_gcm = lib_spatial.apply_agcd_data_mask(X_gcm)
-        logger.info("Masking X_rcm with AGCD mask")
-        X_rcm = lib_spatial.apply_agcd_data_mask(X_rcm)
+    
+
     #< Calculate added value
     logger.info(f"Calculating potential added value using {distance_measure}")
     if hasattr(lib, distance_measure):
@@ -129,10 +207,7 @@ def potential_added_value(da_gcm_hist, da_gcm_fut, da_rcm_hist, da_rcm_fut, proc
     #< Convert av to a dataset
     pav = pav.to_dataset(name="pav")
     #< Return
-    if return_X:
-        return pav, X_gcm, X_rcm
-    else:
-        return pav
+    return pav
 
 
 def main():
@@ -196,18 +271,26 @@ def main():
         da_rcm_fut = da_rcm_fut.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
 
     #< Calculate added value
-    if args.return_X:
-        pav, X_gcm, X_rcm = potential_added_value(da_gcm_hist, da_gcm_fut, da_rcm_hist, da_rcm_fut, args.process, args.process_kwargs, distance_measure=args.distance_measure, region=args.region, return_X=args.return_X, agcd_mask=args.agcd_mask)
-    else:
-        pav = potential_added_value(da_gcm_hist, da_gcm_fut, da_rcm_hist, da_rcm_fut, args.process, args.process_kwargs, distance_measure=args.distance_measure, region=args.region, return_X=args.return_X, agcd_mask=args.agcd_mask)
+    pav = potential_added_value(
+        da_gcm_hist,
+        da_gcm_fut,
+        da_rcm_hist,
+        da_rcm_fut,
+        args.process,
+        args.process_kwargs,
+        distance_measure=args.distance_measure,
+        region=args.region,
+        reuse_X=args.reuse_X,
+        agcd_mask=args.agcd_mask,
+        ifile_X_rcm_hist=args.ifile_X_rcm_hist,
+        ifile_X_rcm_fut=args.ifile_X_rcm_fut,
+        ifile_X_gcm_hist=args.ifile_X_gcm_hist,
+        ifile_X_gcm_fut=args.ifile_X_gcm_fut
+    )
 
     #< Save added value to netcdf
     logger.info("Saving to netcdf")
     lib.write2nc(pav, args.ofile, inlogs=inlogs)
-    if args.return_X:
-        lib.write2nc(X_gcm, args.ofile.replace(".nc", "_X_gcm.nc"), inlogs=inlogs)
-        lib.write2nc(X_rcm, args.ofile.replace(".nc", "_X_rcm.nc"), inlogs=inlogs)
-
 
     logger.info(f"Done")
 

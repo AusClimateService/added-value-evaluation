@@ -53,8 +53,12 @@ def parse_arguments():
     parser.add_argument("--lon0", dest='lon0', nargs='?', type=float, default=-999, help="Lower longitude to select")
     parser.add_argument("--lon1", dest='lon1', nargs='?', type=float, default=-999, help="Upper longitude to select")
 
-    parser.add_argument("--return-X", dest='return_X', action='store_true', help="Also return the regridded climate statistics")
     parser.add_argument("--stations", dest='stations', default=False, action='store_true',help="Obs data is point-based station data")
+
+    parser.add_argument("--reuse-X", dest='reuse_X', action='store_true', help="Reuse the regridded climate statistics")
+    parser.add_argument("--ifile-X-gcm", nargs='?', type=str, default=None, help="Input statistic GCM file")
+    parser.add_argument("--ifile-X-rcm", nargs='?', type=str, default=None, help="Input statistic RCM file")
+    parser.add_argument("--ifile-X-obs", nargs='?', type=str, default=None, help="Input statistic reference file")
 
     parser.add_argument("--nthreads", dest='nthreads', nargs='?', type=int, const='', default=1, help="Number of threads.")
     parser.add_argument("--nworkers", dest='nworkers', nargs='?', type=int, const='', default=2, help="Number of workers.")
@@ -65,7 +69,8 @@ def parse_arguments():
 
 
 
-def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_measure="AVrmse", region=None, return_X=False, agcd_mask=False, stations=False):
+def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_measure="AVrmse", region=None, reuse_X=False, agcd_mask=False, stations=False,
+                ifile_X_rcm=None, ifile_X_gcm=None, ifile_X_obs=None):
     """Calculate added value statistic from driving model (da_gcm), regional model (da_rcm) and reference (da_obs) dataarray
 
     Args:
@@ -93,41 +98,79 @@ def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_mea
         fun = getattr(lib, process)
     else:
         assert False, f"{process} not implemented!"
-    logger.info(f"Calculating {process}")
-    X_gcm = fun(da_gcm, **process_kwargs)
-    X_rcm = fun(da_rcm, **process_kwargs)
-    X_obs = fun(da_obs, **process_kwargs)
-    #< Regrid all quantiles to the RCM resolution
-    if not stations:
-        logger.info(f"Regridding GCM data to RCM grid")
-        X_gcm = lib.regrid(X_gcm, X_rcm)
-        logger.info(f"Regridding obs data to RCM grid")
-        X_obs = lib.regrid(X_obs, X_rcm)
+
+
+    if reuse_X and os.path.isfile(ifile_X_rcm):
+        logger.info(f"Using existing {ifile_X_rcm} for RCM ")
+        X_rcm = xr.open_dataarray(ifile_X_rcm)
+        logger.debug(X_rcm)
+    elif not reuse_X or not os.path.isfile(ifile_X_rcm):
+        logger.info(f"Calculating {process} for RCM")
+        X_rcm = fun(da_rcm, **process_kwargs)
+        if not stations:
+            #< Mask data
+            if not region is None:
+                logger.info("Masking X_rcm.")
+                X_rcm = lib_spatial.apply_region_mask(X_rcm, region.replace("_", " "))
+                logger.debug(X_rcm)
+            #< AGCD mask
+            if agcd_mask:
+                logger.info("Masking X_rcm with AGCD mask")
+                X_rcm = lib_spatial.apply_agcd_data_mask(X_rcm)
+                logger.debug(X_rcm)
+    if reuse_X and not os.path.isfile(ifile_X_rcm):
+        logger.info(f"Saving {ifile_X_rcm} for RCM to netcdf")
+        lib.write2nc(X_rcm, ifile_X_rcm)
+    
+
+    if reuse_X and os.path.isfile(ifile_X_gcm):
+        logger.info(f"Using existing {ifile_X_gcm} for GCM ")
+        X_gcm = xr.open_dataarray(ifile_X_gcm)
+        logger.debug(X_gcm)
+    elif not reuse_X or not os.path.isfile(ifile_X_gcm):
+        logger.info(f"Calculating {process} for GCM")
+        X_gcm = fun(da_gcm, **process_kwargs)
+        if not stations:
+            logger.info(f"Regridding GCM data to RCM grid")
+            X_gcm = lib.regrid(X_gcm, X_rcm)
+            #< Mask data
+            if not region is None:
+                logger.info("Masking X_gcm.")
+                X_gcm = lib_spatial.apply_region_mask(X_gcm, region.replace("_", " "))
+                logger.debug(X_gcm)
+            #< AGCD mask
+            if agcd_mask:
+                logger.info("Masking X_gcm with AGCD mask")
+                X_gcm = lib_spatial.apply_agcd_data_mask(X_gcm)
+                logger.debug(X_gcm)
+    if reuse_X and not os.path.isfile(ifile_X_gcm):
+        logger.info(f"Saving {ifile_X_gcm} for GCM to netcdf")
+        lib.write2nc(X_gcm, ifile_X_gcm)
+
+
+    if reuse_X and os.path.isfile(ifile_X_obs):
+        logger.info(f"Using existing {ifile_X_obs} for OBS ")
+        X_obs = xr.open_dataarray(ifile_X_obs)
         logger.debug(X_obs)
-        logger.debug("---------------------------------------------")
-        #< Mask data
-        if not region is None:
-            logger.info("Masking X_obs.")
-            X_obs = lib_spatial.apply_region_mask(X_obs, region.replace("_", " "))
-            logger.debug(X_obs)
-            logger.info("Masking X_gcm.")
-            X_gcm = lib_spatial.apply_region_mask(X_gcm, region.replace("_", " "))
-            logger.debug(X_gcm)
-            logger.info("Masking X_rcm.")
-            X_rcm = lib_spatial.apply_region_mask(X_rcm, region.replace("_", " "))
-            logger.debug(X_rcm)
-            logger.debug("---------------------------------------------")
-       #< AGCD mask
-        if agcd_mask:
-            logger.info("Masking X_obs with AGCD mask")
-            X_obs = lib_spatial.apply_agcd_data_mask(X_obs)
-            logger.debug(X_obs)
-            logger.info("Masking X_gcm with AGCD mask")
-            X_gcm = lib_spatial.apply_agcd_data_mask(X_gcm)
-            logger.debug(X_gcm)
-            logger.info("Masking X_rcm with AGCD mask")
-            X_rcm = lib_spatial.apply_agcd_data_mask(X_rcm)
-            logger.debug(X_rcm)
+    elif not reuse_X or not os.path.isfile(ifile_X_obs):
+        logger.info(f"Calculating {process} for OBS")
+        X_obs = fun(da_obs, **process_kwargs)
+        if not stations:
+            logger.info(f"Regridding OBS data to RCM grid")
+            X_obs = lib.regrid(X_obs, X_rcm)
+            #< Mask data
+            if not region is None:
+                logger.info("Masking X_obs.")
+                X_obs = lib_spatial.apply_region_mask(X_obs, region.replace("_", " "))
+                logger.debug(X_obs)
+            #< AGCD mask
+            if agcd_mask:
+                logger.info("Masking X_obs with AGCD mask")
+                X_obs = lib_spatial.apply_agcd_data_mask(X_obs)
+                logger.debug(X_obs)
+    if reuse_X and not os.path.isfile(ifile_X_obs):
+        logger.info(f"Saving {ifile_X_obs} for OBS to netcdf")
+        lib.write2nc(X_obs, ifile_X_obs)
 
     #< Calculate added value
     logger.info(f"Calculating added value using {distance_measure}")
@@ -141,10 +184,7 @@ def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_mea
     #< Convert av to a dataset
     av = av.to_dataset(name="av")
     #< Return
-    if return_X:
-        return av, X_gcm, X_rcm, X_obs
-    else:
-        return av
+    return av
 
 
 def main():
@@ -227,21 +267,27 @@ def main():
             logger.debug("---------------------------------------------")
 
     #< Calculate added value
-    if args.return_X:
-        av, X_gcm, X_rcm, X_obs = added_value(da_gcm, da_rcm, da_obs, args.process, args.process_kwargs, distance_measure=args.distance_measure, region=args.region, return_X=args.return_X, agcd_mask=args.agcd_mask, stations=args.stations)
-    else:
-        av = added_value(da_gcm, da_rcm, da_obs, args.process, args.process_kwargs, distance_measure=args.distance_measure, region=args.region, return_X=args.return_X, agcd_mask=args.agcd_mask, stations=args.stations)
+    av = added_value(
+        da_gcm,
+        da_rcm,
+        da_obs,
+        args.process,
+        args.process_kwargs,
+        distance_measure=args.distance_measure,
+        region=args.region,
+        agcd_mask=args.agcd_mask,
+        stations=args.stations,
+        reuse_X=args.reuse_X,
+        ifile_X_rcm=args.ifile_X_rcm,
+        ifile_X_gcm=args.ifile_X_gcm,
+        ifile_X_obs=args.ifile_X_obs
+    )
     logger.debug("Added values looks like:")
     logger.debug(av)
 
     #< Save added value to netcdf
     logger.info("Saving to netcdf")
     lib.write2nc(av, args.ofile, inlogs=inlogs)
-    if args.return_X:
-        lib.write2nc(X_gcm, args.ofile.replace(".nc", "_X_gcm.nc"), inlogs=inlogs)
-        lib.write2nc(X_rcm, args.ofile.replace(".nc", "_X_rcm.nc"), inlogs=inlogs)
-        lib.write2nc(X_obs, args.ofile.replace(".nc", "_X_obs.nc"), inlogs=inlogs)
-
 
     logger.debug(f"Done")
 

@@ -5,7 +5,7 @@
 #PBS -l walltime=48:00:00
 #PBS -l mem=256GB
 #PBS -l ncpus=28
-#PBS -l storage=gdata/dk92+gdata/zv2+gdata/xv83+gdata/dp9+scratch/dp9+gdata/ia39+gdata/rt52+gdata/cj37+gdata/du7+gdata/hh5+gdata/hd50+scratch/hd50+gdata/oi10+gdata/rr8+gdata/rr3+gdata/ma05+gdata/r87+gdata/ub4+gdata/tp28+gdata/du7+gdata/access+gdata/hh5+scratch/du7+scratch/e53+scratch/du7+scratch/access+scratch/public+scratch/tp28+gdata/fs38
+#PBS -l storage=gdata/ra22+gdata/py18+gdata/hr22+gdata/dk92+gdata/zv2+gdata/xv83+gdata/dp9+scratch/dp9+gdata/ia39+gdata/rt52+gdata/cj37+gdata/du7+gdata/hh5+gdata/hd50+scratch/hd50+gdata/oi10+gdata/rr8+gdata/rr3+gdata/ma05+gdata/r87+gdata/ub4+gdata/tp28+gdata/du7+gdata/access+gdata/hh5+scratch/du7+scratch/e53+scratch/du7+scratch/access+scratch/public+scratch/tp28+gdata/fs38
 #PBS -l jobfs=400GB
 
 module use /g/data/access/ngm/modules
@@ -29,7 +29,7 @@ regions="$regions $nrm_regions"
 opath="/g/data/tp28/cst565/ACS_added_value"
 
 export PYTHONPATH=/home/565/cst565/ACS/BARPA_evaluation/lib:$PYTHONPATH
-export LIB_LOGLEVEL="DEBUG"
+export LIB_LOGLEVEL="INFO"
 nprocs=3
 
 
@@ -58,7 +58,7 @@ do
                         --datestart-fut 20700101 --dateend-fut 20991231 \
                         --nworkers 7 --nthreads 1 --nprocs $nprocs \
                         --odir ${opath} \
-                        --return-X \
+                        --reuse-X \
                         --log-level ${LIB_LOGLEVEL} \
                         ${cmd_add}
         done
@@ -85,12 +85,12 @@ do
                         --datestart-hist 19850101 --dateend-hist 20141231 \
                         --datestart-fut 20700101 --dateend-fut 20991231 \
                         --nworkers 7 --nthreads 1 --nprocs $nprocs \
-                        --odir ${opath} \
-                        --return-X \
-                        --log-level ${LIB_LOGLEVEL}
-        done
-    done
-done
+                         --odir ${opath} \
+                         --reuse-X \
+                         --log-level ${LIB_LOGLEVEL}
+         done
+     done
+ done
 
 for gcm in $gcm_list
 do
@@ -117,7 +117,7 @@ do
                         --datestart-fut 20700101 --dateend-fut 20991231 \
                         --nworkers 7 --nthreads 1 --nprocs $nprocs \
                         --odir ${opath} \
-                        --return-X \
+                        --reuse-X \
                         --log-level ${LIB_LOGLEVEL} \
                         ${cmd_add}
         done
@@ -145,7 +145,7 @@ do
                         --datestart-fut 20700101 --dateend-fut 20991231 \
                         --nworkers 7 --nthreads 1 --nprocs $nprocs \
                         --odir ${opath} \
-                        --return-X \
+                        --reuse-X \
                         --log-level ${LIB_LOGLEVEL}
         done
     done
