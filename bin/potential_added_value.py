@@ -171,7 +171,7 @@ def potential_added_value(da_gcm_hist, da_gcm_fut, da_rcm_hist, da_rcm_fut, proc
     
     if reuse_X and os.path.isfile(ifile_X_gcm_fut):
         logger.info(f"Using existing {ifile_X_gcm_fut} for GCM ")
-        X_gcm_fut = xr.open_dataset(ifile_X_gcm_fut).to_dataarray()
+        X_gcm_fut = xr.open_dataarray(ifile_X_gcm_fut)
         logger.debug(X_gcm_fut)
     elif not reuse_X or not os.path.isfile(ifile_X_gcm_fut):
         logger.info(f"Calculating {process} for GCM")
