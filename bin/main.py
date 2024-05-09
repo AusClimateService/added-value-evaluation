@@ -73,7 +73,7 @@ def parse_arguments():
 
 
 def driving_model_loader(gcm, scen, freq, var):
-    if gcm in ["ACCESS-ESM1-5", "ACCESS-CM2", "EC-Earth3", "NorESM2-MM", "CMCC-ESM2", "CESM2"]:
+    if gcm in ["ACCESS-ESM1-5", "ACCESS-CM2", "EC-Earth3", "NorESM2-MM", "CMCC-ESM2", "CESM2", "MPI-ESM1-2-HR"]:
         return cmip6_interface.get_cmip6_files(gcm, scen, freq, var), var
     elif gcm in ["ERA5"]:
         era5_varname_dict = {
@@ -362,7 +362,7 @@ def main():
             for av_measure in args.av_measures:
                 ofile_av = get_ofile(odir=args.odir, measure=args.av_distance_measure, variable=args.variable, gcm=args.gcm, scenario=args.scenario_hist, rcm=args.rcm, obs=args.obs, freq=args.freq, region=args.region, season=args.season, datestart_hist=args.datestart_hist, dateend_hist=args.dateend_hist, kwargs=json.loads(args.process_kwargs))
                 ofile_X_gcm = get_ofile(odir=args.odir, measure="", variable=args.variable, gcm=args.gcm, scenario=args.scenario_hist, rcm="", obs="", freq=args.freq, region=args.region, season=args.season, datestart_hist=args.datestart_hist, dateend_hist=args.dateend_hist, kwargs=json.loads(args.process_kwargs))
-                ofile_X_rcm = get_ofile(odir=args.odir, measure="", variable=args.variable, gcm="", scenario=args.scenario_hist, rcm=args.rcm, obs="", freq=args.freq, region=args.region, season=args.season, datestart_hist=args.datestart_hist, dateend_hist=args.dateend_hist, kwargs=json.loads(args.process_kwargs))
+                ofile_X_rcm = get_ofile(odir=args.odir, measure="", variable=args.variable, gcm=args.gcm, scenario=args.scenario_hist, rcm=args.rcm, obs="", freq=args.freq, region=args.region, season=args.season, datestart_hist=args.datestart_hist, dateend_hist=args.dateend_hist, kwargs=json.loads(args.process_kwargs))
                 ofile_X_obs = get_ofile(odir=args.odir, measure="", variable=args.variable, gcm="", scenario=args.scenario_hist, rcm="", obs=args.obs, freq=args.freq, region=args.region, season=args.season, datestart_hist=args.datestart_hist, dateend_hist=args.dateend_hist, kwargs=json.loads(args.process_kwargs))
                 #< Check if we need to calculate AV
                 if (av_measure == "added_value" or av_measure == "realised_added_value" or av_measure == "added_value_norm") and (not os.path.isfile(ofile_av) or args.overwrite):
@@ -394,8 +394,8 @@ def main():
             for av_measure in args.av_measures:
                 ofile_X_gcm_hist = get_ofile(odir=args.odir, measure="", variable=args.variable, gcm=args.gcm, scenario=args.scenario_hist, rcm="", obs="", freq=args.freq, region=args.region, season=args.season, datestart_hist=args.datestart_hist, dateend_hist=args.dateend_hist, kwargs=json.loads(args.process_kwargs))
                 ofile_X_gcm_fut = get_ofile(odir=args.odir, measure="", variable=args.variable, gcm=args.gcm, scenario=args.scenario_fut, rcm="", obs="", freq=args.freq, region=args.region, season=args.season, datestart_fut=args.datestart_fut, dateend_fut=args.dateend_fut, kwargs=json.loads(args.process_kwargs))
-                ofile_X_rcm_hist = get_ofile(odir=args.odir, measure="", variable=args.variable, gcm="", scenario=args.scenario_hist, rcm=args.rcm, obs="", freq=args.freq, region=args.region, season=args.season, datestart_hist=args.datestart_hist, dateend_hist=args.dateend_hist, kwargs=json.loads(args.process_kwargs))
-                ofile_X_rcm_fut = get_ofile(odir=args.odir, measure="", variable=args.variable, gcm="", scenario=args.scenario_fut, rcm=args.rcm, obs="", freq=args.freq, region=args.region, season=args.season, datestart_fut=args.datestart_fut, dateend_fut=args.dateend_fut, kwargs=json.loads(args.process_kwargs))
+                ofile_X_rcm_hist = get_ofile(odir=args.odir, measure="", variable=args.variable, gcm=args.gcm, scenario=args.scenario_hist, rcm=args.rcm, obs="", freq=args.freq, region=args.region, season=args.season, datestart_hist=args.datestart_hist, dateend_hist=args.dateend_hist, kwargs=json.loads(args.process_kwargs))
+                ofile_X_rcm_fut = get_ofile(odir=args.odir, measure="", variable=args.variable, gcm=args.gcm, scenario=args.scenario_fut, rcm=args.rcm, obs="", freq=args.freq, region=args.region, season=args.season, datestart_fut=args.datestart_fut, dateend_fut=args.dateend_fut, kwargs=json.loads(args.process_kwargs))
                 ofile_pav = get_ofile(odir=args.odir, measure=args.pav_distance_measure, variable=args.variable, gcm=args.gcm, scenario=args.scenario_fut, rcm=args.rcm, freq=args.freq, region=args.region, season=args.season, datestart_hist=args.datestart_hist, dateend_hist=args.dateend_hist, datestart_fut=args.datestart_fut, dateend_fut=args.dateend_fut, kwargs=json.loads(args.process_kwargs))
                 #< Check if we need to calculate PAV
                 if (av_measure == "potential_added_value" or av_measure == "realised_added_value") and (not os.path.isfile(ofile_pav) or args.overwrite):
