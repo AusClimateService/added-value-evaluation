@@ -302,18 +302,19 @@ def AVperkins(X_obs, X_gdd, X_rcm,spacing=1):
     :return:      xarray containting the AV (RMSE) for each grid-point
     """
     from xhistogram.xarray import histogram
+    # calculate bounds
     mx = max(X_obs.max(),X_gdd.max(),X_rcm.max()).values
     mn = min(X_obs.min(),X_gdd.min(),X_rcm.min()).values
-    #spacing=1 # figure out how to make this an argument
     mn = np.floor(mn/spacing)*spacing
     mx = np.ceil(mx/spacing)*spacing
     bins = np.arange(mn,mx+spacing,spacing)
+    # calculate normed histograms
     hist_obs = histogram(X_obs,bins=[bins],density=1)
     hist_gdd = histogram(X_gdd,bins=[bins],density=1)
     hist_rcm = histogram(X_rcm,bins=[bins],density=1)
+    # calculate perkins scores
     pss_gdd = np.minimum(hist_gdd,hist_obs).sum()
     pss_rcm = np.minimum(hist_rcm,hist_obs).sum()
-    print(mx,mn,pss_rcm.values, pss_gdd.values,spacing)
     return pss_rcm - pss_gdd
 
 def AVcorr(X_obs, X_gdd, X_rcm):
