@@ -60,6 +60,10 @@ def parse_arguments():
     parser.add_argument("--ifile-X-rcm", nargs='?', type=str, default=None, help="Input statistic RCM file")
     parser.add_argument("--ifile-X-obs", nargs='?', type=str, default=None, help="Input statistic reference file")
 
+    parser.add_argument("--upscale2gcm", default=False, action='store_true',help="Upscale the RCM and OBS to the GCM resolution instead.")
+    parser.add_argument("--upscale2ref", default=False, action='store_true',help="Upscale the RCM and OBS to reference resolution instead.")
+    parser.add_argument("--ifile-ref-grid", nargs='?', type=str, default=None, help="Reference file to use for upscaling")
+
     parser.add_argument("--nthreads", dest='nthreads', nargs='?', type=int, const='', default=1, help="Number of threads.")
     parser.add_argument("--nworkers", dest='nworkers', nargs='?', type=int, const='', default=2, help="Number of workers.")
 
@@ -70,7 +74,7 @@ def parse_arguments():
 
 
 def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_measure="AVrmse", region=None, reuse_X=False, agcd_mask=False, stations=False,
-                ifile_X_rcm=None, ifile_X_gcm=None, ifile_X_obs=None):
+                ifile_X_rcm=None, ifile_X_gcm=None, ifile_X_obs=None, upscale2gcm=False, upscale2ref=False, da_ref_grid=None):
     """Calculate added value statistic from driving model (da_gcm), regional model (da_rcm) and reference (da_obs) dataarray
 
     Args:
@@ -84,10 +88,14 @@ def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_mea
         write_X (bool): Should the regridded climate statistic be written out too?
         agcd_mask (bool): Apply AGCD mask based on AGCD precip data
         stations (bool): Is reference data a point-based dataset?
+        upscale2gcm (bool): Should all variables be upscaled to the gcm resolution?
+        upscale2ref (bool): Should all variables be upscaled to a reference grid resolution?
+        da_ref_grid (xarray): Reference grid to use for upscaling?
 
     Returns:
         xarray dataset : Added value
     """
+    assert not (upscale2gcm and upscale2ref), f"upscale2gcm and upscale2ref cannot both be True!"
     #< Make sure all dataarrays have the same units
     assert "units" in da_gcm.attrs, f"da_gcm has no units attribute"
     assert "units" in da_rcm.attrs, f"da_rcm has no units attribute"
@@ -105,19 +113,68 @@ def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_mea
         X_rcm = xr.open_dataarray(ifile_X_rcm)
         logger.debug(X_rcm)
     elif not reuse_X or not os.path.isfile(ifile_X_rcm):
-        logger.info(f"Calculating {process} for RCM")
-        X_rcm = fun(da_rcm, **process_kwargs)
-        if not stations:
-            #< Mask data
-            if not region is None:
-                logger.info("Masking X_rcm.")
-                X_rcm = lib_spatial.apply_region_mask(X_rcm, region.replace("_", " "))
+        if upscale2gcm:
+            if not stations:
+                #< Mask data
+                if not region is None:
+                    logger.info("Masking RCM.")
+                    da_rcm_masked = lib_spatial.apply_region_mask(da_rcm, region.replace("_", " "))
+                #< AGCD mask
+                if agcd_mask:
+                    logger.info("Masking RCM with AGCD mask")
+                    da_rcm_masked = lib_spatial.apply_agcd_data_mask(da_rcm_masked)
+                da_rcm_masked = da_rcm_masked.chunk({"time": "auto", "lat": -1, "lon": -1})
+                logger.debug(da_rcm_masked)
+                logger.info(f"Upscaling RCM to GCM grid")
+                da_rcm_up = lib.regrid(da_rcm_masked, da_gcm, reuse_regrid_weights=True)
+                #< Mask data
+                if not region is None:
+                    da_rcm_up = lib_spatial.apply_region_mask(da_rcm_up, region.replace("_", " "))
+                #< AGCD mask
+                if agcd_mask:
+                    da_rcm_up = lib_spatial.apply_agcd_data_mask(da_rcm_up)
+                logger.debug(da_rcm_up)
+                logger.info(f"Calculating {process} for upscaled RCM")
+                X_rcm = fun(da_rcm_up, **process_kwargs)
                 logger.debug(X_rcm)
-            #< AGCD mask
-            if agcd_mask:
-                logger.info("Masking X_rcm with AGCD mask")
-                X_rcm = lib_spatial.apply_agcd_data_mask(X_rcm)
+        elif upscale2ref:
+            if not stations:
+                #< Mask data
+                if not region is None:
+                    logger.info("Masking RCM.")
+                    da_rcm_masked = lib_spatial.apply_region_mask(da_rcm, region.replace("_", " "))
+                #< AGCD mask
+                if agcd_mask:
+                    logger.info("Masking RCM with AGCD mask")
+                    da_rcm_masked = lib_spatial.apply_agcd_data_mask(da_rcm_masked)
+                da_rcm_masked = da_rcm_masked.chunk({"time": "auto", "lat": -1, "lon": -1})
+                logger.debug(da_rcm_masked)
+                logger.info(f"Upscaling RCM to reference grid")
+                da_rcm_up = lib.regrid(da_rcm_masked, da_ref_grid, reuse_regrid_weights=True)
+                #< Mask data
+                if not region is None:
+                    da_rcm_up = lib_spatial.apply_region_mask(da_rcm_up, region.replace("_", " "))
+                #< AGCD mask
+                if agcd_mask:
+                    da_rcm_up = lib_spatial.apply_agcd_data_mask(da_rcm_up)
+                logger.debug(da_rcm_up)
+                logger.info(f"Calculating {process} for upscaled RCM")
+                X_rcm = fun(da_rcm_up, **process_kwargs)
                 logger.debug(X_rcm)
+        else:
+            logger.info(f"Calculating {process} for RCM")
+            X_rcm = fun(da_rcm, **process_kwargs)
+            if not stations:
+                #< Mask data
+                if not region is None:
+                    logger.info("Masking X_rcm.")
+                    X_rcm = lib_spatial.apply_region_mask(X_rcm, region.replace("_", " "))
+                    logger.debug(X_rcm)
+                #< AGCD mask
+                if agcd_mask:
+                    logger.info("Masking X_rcm with AGCD mask")
+                    X_rcm = lib_spatial.apply_agcd_data_mask(X_rcm)
+                    logger.debug(X_rcm)
     if reuse_X and not os.path.isfile(ifile_X_rcm):
         logger.info(f"Saving {ifile_X_rcm} for RCM to netcdf")
         lib.write2nc(X_rcm, ifile_X_rcm)
@@ -128,21 +185,61 @@ def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_mea
         X_gcm = xr.open_dataarray(ifile_X_gcm)
         logger.debug(X_gcm)
     elif not reuse_X or not os.path.isfile(ifile_X_gcm):
-        logger.info(f"Calculating {process} for GCM")
-        X_gcm = fun(da_gcm, **process_kwargs)
-        if not stations:
-            logger.info(f"Regridding GCM data to RCM grid")
-            X_gcm = lib.regrid(X_gcm, X_rcm)
-            #< Mask data
-            if not region is None:
-                logger.info("Masking X_gcm.")
-                X_gcm = lib_spatial.apply_region_mask(X_gcm, region.replace("_", " "))
+        if upscale2gcm:
+            if not stations:
+                #< Mask data
+                if not region is None:
+                    logger.info("Masking GCM.")
+                    da_gcm_masked = lib_spatial.apply_region_mask(da_gcm, region.replace("_", " "))
+                    logger.debug(da_gcm_masked)
+                #< AGCD mask
+                if agcd_mask:
+                    logger.info("Masking GCM with AGCD mask")
+                    da_gcm_masked = lib_spatial.apply_agcd_data_mask(da_gcm_masked)
+                    logger.debug(da_gcm_masked)
+                logger.info(f"Calculating {process} for GCM")
+                X_gcm = fun(da_gcm_masked, **process_kwargs)
                 logger.debug(X_gcm)
-            #< AGCD mask
-            if agcd_mask:
-                logger.info("Masking X_gcm with AGCD mask")
-                X_gcm = lib_spatial.apply_agcd_data_mask(X_gcm)
+        elif upscale2ref:
+            if not stations:
+                #< Mask data
+                if not region is None:
+                    logger.info("Masking GCM.")
+                    da_gcm_masked = lib_spatial.apply_region_mask(da_gcm, region.replace("_", " "))
+                #< AGCD mask
+                if agcd_mask:
+                    logger.info("Masking GCM with AGCD mask")
+                    da_gcm_masked = lib_spatial.apply_agcd_data_mask(da_gcm_masked)
+                da_gcm_masked = da_gcm_masked.chunk({"time": "auto", "lat": -1, "lon": -1})
+                logger.debug(da_gcm_masked)
+                logger.info(f"Upscaling GCM to reference grid")
+                da_gcm_up = lib.regrid(da_gcm_masked, da_ref_grid, reuse_regrid_weights=True)
+                #< Mask data
+                if not region is None:
+                    da_gcm_up = lib_spatial.apply_region_mask(da_gcm_up, region.replace("_", " "))
+                #< AGCD mask
+                if agcd_mask:
+                    da_gcm_up = lib_spatial.apply_agcd_data_mask(da_gcm_up)
+                logger.debug(da_gcm_up)
+                logger.info(f"Calculating {process} for upscaled GCM")
+                X_gcm = fun(da_gcm_up, **process_kwargs)
                 logger.debug(X_gcm)
+        else:
+            logger.info(f"Calculating {process} for GCM")
+            X_gcm = fun(da_gcm, **process_kwargs)
+            if not stations:
+                logger.info(f"Regridding GCM data to RCM grid")
+                X_gcm = lib.regrid(X_gcm, X_rcm)
+                #< Mask data
+                if not region is None:
+                    logger.info("Masking X_gcm.")
+                    X_gcm = lib_spatial.apply_region_mask(X_gcm, region.replace("_", " "))
+                    logger.debug(X_gcm)
+                #< AGCD mask
+                if agcd_mask:
+                    logger.info("Masking X_gcm with AGCD mask")
+                    X_gcm = lib_spatial.apply_agcd_data_mask(X_gcm)
+                    logger.debug(X_gcm)
     if reuse_X and not os.path.isfile(ifile_X_gcm):
         logger.info(f"Saving {ifile_X_gcm} for GCM to netcdf")
         lib.write2nc(X_gcm, ifile_X_gcm)
@@ -153,21 +250,64 @@ def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_mea
         X_obs = xr.open_dataarray(ifile_X_obs)
         logger.debug(X_obs)
     elif not reuse_X or not os.path.isfile(ifile_X_obs):
-        logger.info(f"Calculating {process} for OBS")
-        X_obs = fun(da_obs, **process_kwargs)
-        if not stations:
-            logger.info(f"Regridding OBS data to RCM grid")
-            X_obs = lib.regrid(X_obs, X_rcm)
-            #< Mask data
-            if not region is None:
-                logger.info("Masking X_obs.")
-                X_obs = lib_spatial.apply_region_mask(X_obs, region.replace("_", " "))
+        if upscale2gcm:
+            if not stations:
+                #< Mask data
+                if not region is None:
+                    logger.info("Masking OBS.")
+                    da_obs_masked = lib_spatial.apply_region_mask(da_obs, region.replace("_", " "))
+                #< AGCD mask
+                if agcd_mask:
+                    logger.info("Masking OBS with AGCD mask")
+                    da_obs_masked = lib_spatial.apply_agcd_data_mask(da_obs_masked)
+                da_obs_masked = da_obs_masked.chunk({"time": "auto", "lat": -1, "lon": -1})
+                logger.debug(da_obs_masked)
+                logger.info(f"Upscaling OBS to GCM grid")
+                da_obs_up = lib.regrid(da_obs_masked, da_gcm, reuse_regrid_weights=True)
+                logger.debug(da_obs_up)
+                logger.info(f"Calculating {process} for upscaled OBS")
+                X_obs = fun(da_obs_up, **process_kwargs)
                 logger.debug(X_obs)
-            #< AGCD mask
-            if agcd_mask:
-                logger.info("Masking X_obs with AGCD mask")
-                X_obs = lib_spatial.apply_agcd_data_mask(X_obs)
+        elif upscale2ref:
+            if not stations:
+                #< Mask data
+                if not region is None:
+                    logger.info("Masking OBS.")
+                    da_obs_masked = lib_spatial.apply_region_mask(da_obs, region.replace("_", " "))
+                #< AGCD mask
+                if agcd_mask:
+                    logger.info("Masking OBS with AGCD mask")
+                    da_obs_masked = lib_spatial.apply_agcd_data_mask(da_obs_masked)
+                da_obs_masked = da_obs_masked.chunk({"time": "auto", "lat": -1, "lon": -1})
+                logger.debug(da_obs_masked)
+                logger.info(f"Upscaling OBS to reference grid")
+                da_obs_up = lib.regrid(da_obs_masked, da_ref_grid, reuse_regrid_weights=True)
+                #< Mask data
+                if not region is None:
+                    da_obs_up = lib_spatial.apply_region_mask(da_obs_up, region.replace("_", " "))
+                #< AGCD mask
+                if agcd_mask:
+                    da_obs_up = lib_spatial.apply_agcd_data_mask(da_obs_up)
+                logger.debug(da_obs_up)
+                logger.info(f"Calculating {process} for upscaled OBS")
+                X_obs = fun(da_obs_up, **process_kwargs)
                 logger.debug(X_obs)
+        else:
+            logger.info(f"Calculating {process} for OBS")
+            X_obs = fun(da_obs, **process_kwargs)
+            if not stations:
+                logger.info(f"Regridding OBS data to RCM grid")
+                X_obs = lib.regrid(X_obs, X_rcm)
+                #< Mask data
+                if not region is None:
+                    logger.info("Masking X_obs.")
+                    X_obs = lib_spatial.apply_region_mask(X_obs, region.replace("_", " "))
+                    logger.debug(X_obs)
+                #< AGCD mask
+                if agcd_mask:
+                    logger.info("Masking X_obs with AGCD mask")
+                    X_obs = lib_spatial.apply_agcd_data_mask(X_obs)
+                    logger.debug(X_obs)
     if reuse_X and not os.path.isfile(ifile_X_obs):
         logger.info(f"Saving {ifile_X_obs} for OBS to netcdf")
         lib.write2nc(X_obs, ifile_X_obs)
@@ -203,6 +343,12 @@ def main():
     logger.debug(ds_gcm)
     logger.debug(ds_rcm)
     logger.debug(ds_obs)
+
+    da_ref_grid = None
+    if args.upscale2ref:
+        da_ref_grid = xr.open_dataarray(args.ifile_ref_grid)
+        logger.debug("Reference grid looks like:")
+        logger.debug(da_ref_grid)
 
     #< Get the history of the input files
     inlogs = {}
@@ -264,6 +410,10 @@ def main():
             logger.debug(da_gcm)
             logger.debug(da_rcm)
             logger.debug(da_obs)
+
+            if args.upscale2ref:
+                da_ref_grid = da_ref_grid.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
+                logger.debug(da_ref_grid)
             logger.debug("---------------------------------------------")
 
     #< Calculate added value
@@ -280,7 +430,10 @@ def main():
         reuse_X=args.reuse_X,
         ifile_X_rcm=args.ifile_X_rcm,
         ifile_X_gcm=args.ifile_X_gcm,
-        ifile_X_obs=args.ifile_X_obs
+        ifile_X_obs=args.ifile_X_obs,
+        upscale2gcm=args.upscale2gcm,
+        upscale2ref=args.upscale2ref,
+        da_ref_grid=da_ref_grid,
     )
     logger.debug("Added values looks like:")
     logger.debug(av)

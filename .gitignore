@@ -1,3 +1,4 @@
 *.nc
 .ipynb_checkpoints
 __pycache__/
+*.[e,o][0-9]*

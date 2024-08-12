@@ -12,6 +12,7 @@ import logging
 import sys
 import cmdline_provenance as cmdprov
 import tempfile
+import lib_standards
 
 
 def get_logger(name, level='info'):
@@ -458,8 +459,12 @@ def get_latlongrid_xr(ds):
     grid  = xr.Dataset({'longitude': lon,'latitude': lat, 'longitude_b': lon_b, 'latitude_b': lat_b})
     grid['longitude'].attrs = ds[lon_name].attrs
     grid['latitude'].attrs = ds[lat_name].attrs
-    # Add mask
-    mask = xr.where(~np.isnan(ds), 1, 0)
+    # Add mask and ignore the time dimension
+    if "time" in ds.dims:
+        ds_no_time = ds.isel(time=0)
+    else:
+        ds_no_time = ds
+    mask = xr.where(~np.isnan(ds_no_time), 1, 0)
     mask = mask.rename({lat_name:"latitude", lon_name:"longitude"})
     grid["mask"] = mask
     return grid
@@ -498,6 +503,9 @@ def regrid_helper(ds, other, exclude_list=["time_bnds"], **kwargs):
     return ds_regrid
 
 
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+# Use lib_standard instead for now
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 def regrid(ds, other, **kwargs):
     """
     Helper for XESMF regridding.
@@ -519,6 +527,21 @@ def regrid(ds, other, **kwargs):
     else:
         ds = _regrid(ds, other, **kwargs)
     return ds
+# def regrid(ds, other, **kwargs):
+#     try:
+#         ds = ds.to_dataset()
+#     except:
+#         pass
+#     try:
+#         other = other.to_dataset()
+#     except:
+#         pass
+#     res = lib_standards.regrid(ds, other)
+#     try:
+#         res = res.to_dataarray()
+#     except:
+#         pass
+#     return res
 
 
 def _regrid(ds, other, **kwargs):

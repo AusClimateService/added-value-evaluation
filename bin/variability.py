@@ -42,6 +42,12 @@ def parse_arguments():
 
     parser.add_argument("--ofile", dest='ofile', nargs='?', type=str, default="variability.nc", help="Path and name of output file")
 
+    parser.add_argument("--upscale2gcm", default=False, action='store_true',help="Upscale the RCM and to the GCM resolution instead.")
+    parser.add_argument("--ifile-gcm", nargs='?', type=str, default=None, help="GCM file to use for upscaling")
+    parser.add_argument("--upscale2ref", default=False, action='store_true',help="Upscale the RCM and OBS to reference resolution instead.")
+    parser.add_argument("--ifile-ref-grid", nargs='?', type=str, default=None, help="Reference file to use for upscaling")
+
+
     parser.add_argument("--lat0", dest='lat0', nargs='?', type=float, default=-999, help="Lower latitude to select")
     parser.add_argument("--lat1", dest='lat1', nargs='?', type=float, default=-999, help="Upper latitude to select")
     parser.add_argument("--lon0", dest='lon0', nargs='?', type=float, default=-999, help="Lower longitude to select")
@@ -56,7 +62,7 @@ def parse_arguments():
 
 
 
-def variability(da, process, process_kwargs={}, grouping="", dim="time", agcd_mask=False):
+def variability(da, process, process_kwargs={}, grouping="", dim="time", agcd_mask=False, region=None, upscale2gcm=False, da_gcm=None, upscale2ref=False, da_ref_grid=None):
     """Calculate added value statistic from driving model (da_gcm), regional model (da_rcm) and reference (da_obs) dataarray
 
     Args:
@@ -65,14 +71,35 @@ def variability(da, process, process_kwargs={}, grouping="", dim="time", agcd_ma
         process_kwargs (dict): Kwargs to pass to "process" (e.g., {'quantile':0.95})
         agcd_mask (bool): Apply AGCD mask based on AGCD precip data
         grouping (str): The grouping to use (e.g., time.year)
+        upscale2gcm (bool): Upscale to GCM resolution
+        da_gcm (xarray): Reference GCM data to use for upscaling
+        upscale2ref (bool): Should all variables be upscaled to a reference grid resolution?
+        da_ref_grid (xarray): Reference grid to use for upscaling?
 
     Returns:
         xarray dataset : Variability
     """
+    assert not (upscale2gcm and upscale2ref), f"upscale2gcm and upscale2ref cannot both be True!"
+    #< Mask data
+    if not region is None:
+        logger.info(f"Masking {region}.")
+        da = lib_spatial.apply_region_mask(da, region.replace("_", " "))
+        logger.debug(da)
     #< AGCD mask
     if agcd_mask:
         logger.info("Masking with AGCD mask")
         da = lib_spatial.apply_agcd_data_mask(da)
+
+    #< Maybe upscale
+    if upscale2gcm:
+        da = da.chunk({"time": "auto", "lat": -1, "lon": -1})
+        logger.info(f"Upscaling to GCM grid")
+        da = lib.regrid(da, da_gcm, reuse_regrid_weights=True)
+        logger.debug(da)
+    elif upscale2ref:
+        da = da.chunk({"time": "auto", "lat": -1, "lon": -1})
+        logger.info(f"Upscaling to reference grid")
+        da = lib.regrid(da, da_ref_grid, reuse_regrid_weights=True)
 
     #< Search for "process" function in library
     if hasattr(lib, process):
@@ -99,12 +126,24 @@ def main():
     parser = parse_arguments()
     args = parser.parse_args()
 
+    assert not (args.upscale2gcm and args.upscale2ref), f"upscale2gcm and upscale2ref cannot both be True!"
+
     #< Open datasets
     logger.info(f"Opening dataset")
     ds = lib.open_dataset(args.ifiles)
     logger.debug(ds)
     logger.debug("Input dataset looks like:")
     logger.debug(ds)
+    da_gcm = None
+    if args.upscale2gcm:
+        da_gcm = lib.open_dataset(args.ifile_gcm)
+        logger.debug("GCM reference file looks like:")
+        logger.debug(da_gcm)
+    da_ref_grid = None
+    if args.upscale2ref:
+        da_ref_grid = xr.open_dataarray(args.ifile_ref_grid)
+        logger.debug("Reference grid looks like:")
+        logger.debug(da_ref_grid)
     logger.debug("----------------------------------------------")
 
     #< Get the history of the input files
@@ -134,13 +173,23 @@ def main():
     if args.lat0!=-999 and args.lat1!=-999 and args.lon0!=-999 and args.lon1!=-999:
         logger.info(f"Selecting domain")
         da = da.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
-
-    #< Mask data
-    if args.region:
-        da = lib_spatial.apply_region_mask(da, args.region.replace("_", " "))
+        if args.upscale2ref:
+                da_ref_grid = da_ref_grid.sel(lat=slice(args.lat0, args.lat1), lon=slice(args.lon0, args.lon1))
+                logger.debug(da_ref_grid)
 
     #< Calculate variability
-    var = variability(da, args.process, args.process_kwargs, grouping=args.grouping, dim=args.dim, agcd_mask=args.agcd_mask)
+    var = variability(
+            da,
+            args.process,
+            args.process_kwargs,
+            grouping=args.grouping,
+            dim=args.dim,
+            agcd_mask=args.agcd_mask,
+            upscale2gcm=args.upscale2gcm,
+            da_gcm = da_gcm,
+            upscale2ref=args.upscale2ref,
+            da_ref_grid=da_ref_grid
+    )
 
     #< Save added value to netcdf
     logger.info("Saving to netcdf")
