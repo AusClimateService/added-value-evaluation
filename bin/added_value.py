@@ -74,7 +74,7 @@ def parse_arguments():
 
 
 def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_measure="AVrmse", region=None, reuse_X=False, agcd_mask=False, stations=False,
-                ifile_X_rcm=None, ifile_X_gcm=None, ifile_X_obs=None, upscale2gcm=False, upscale2ref=False, da_ref_grid=None):
+                ifile_X_rcm=None, ifile_X_gcm=None, ifile_X_obs=None, upscale2gcm=False, upscale2ref=False, da_ref_grid=None, distance_kwargs={}):
     """Calculate added value statistic from driving model (da_gcm), regional model (da_rcm) and reference (da_obs) dataarray
 
     Args:
@@ -318,7 +318,7 @@ def added_value(da_gcm, da_rcm, da_obs, process, process_kwargs={}, distance_mea
         fun = getattr(lib, distance_measure)
     else:
         assert False, f"Distance measure of {distance_measure} not implemented!"
-    av = fun(X_obs, X_gcm, X_rcm)
+    av = fun(X_obs, X_gcm, X_rcm,**distance_kwargs)
     logger.debug(av)
     logger.debug("---------------------------------------------")
     #< Convert av to a dataset

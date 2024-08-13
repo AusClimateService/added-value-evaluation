@@ -291,6 +291,32 @@ def AVrmse(X_obs, X_gdd, X_rcm):
         out = np.sqrt((X_gdd-X_obs)**2) - np.sqrt((X_rcm-X_obs)**2)
     return out
 
+def AVperkins(X_obs, X_gdd, X_rcm,spacing=1):
+    """
+    Calculate added value (AV) using a Perkins Skill Score between the global
+    driving model (gdd), the regional climate model (rcm) and observations (obs).
+    Designed for spatial distributions of percentiles but may be generalisable.
+
+    :param X_obs: xarray containing the observations
+    :param X_gdd: xarray containing the global driving data
+    :param X_rcm: xarray containing the regional climate model
+    :return:      xarray containting the AV (RMSE) for each grid-point
+    """
+    from xhistogram.xarray import histogram
+    # calculate bounds
+    mx = max(X_obs.max(),X_gdd.max(),X_rcm.max()).values
+    mn = min(X_obs.min(),X_gdd.min(),X_rcm.min()).values
+    mn = np.floor(mn/spacing)*spacing
+    mx = np.ceil(mx/spacing)*spacing
+    bins = np.arange(mn,mx+spacing,spacing)
+    # calculate normed histograms
+    hist_obs = histogram(X_obs,bins=[bins],density=1)
+    hist_gdd = histogram(X_gdd,bins=[bins],density=1)
+    hist_rcm = histogram(X_rcm,bins=[bins],density=1)
+    # calculate perkins scores
+    pss_gdd = np.minimum(hist_gdd,hist_obs).sum()
+    pss_rcm = np.minimum(hist_rcm,hist_obs).sum()
+    return pss_rcm - pss_gdd
 
 def AVcorr(X_obs, X_gdd, X_rcm):
     """
@@ -624,6 +650,8 @@ def find_varname_in_acceptable(ds, accept=[]):
     assert len(found_names) != 0, f"Found no names that match accepatable names!\nNames in dataset: {list(ds.keys())}\nAcceptable names: {accept}"
     return found_names[0]
 
+def no_process(ds):
+    return ds
 
 def find_dimname_in_acceptable(ds, accept=[]):
     """Given a list of acceptable names find if one of them is in the dataset and return them.
