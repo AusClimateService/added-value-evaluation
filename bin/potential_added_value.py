@@ -116,53 +116,54 @@ def potential_added_value(da_gcm_hist, da_gcm_fut, da_rcm_hist, da_rcm_fut, proc
         logger.debug(X_rcm_hist)
     elif not reuse_X or not os.path.isfile(ifile_X_rcm_hist):
         if upscale2gcm:
-            #< Mask data
-            if not region is None:
-                logger.info("Masking historical RCM.")
-                da_rcm_hist_masked = lib_spatial.apply_region_mask(da_rcm_hist, region.replace("_", " "))
-                logger.debug(da_rcm_hist_masked)
             #< AGCD mask
             if agcd_mask:
                 logger.info("Masking historical RCM with AGCD mask")
-                da_rcm_hist_masked = lib_spatial.apply_agcd_data_mask(da_rcm_hist_masked)
-                logger.debug(da_rcm_hist_masked)
-            da_rcm_hist_masked = da_rcm_hist_masked.chunk({"time": "auto", "lat": -1, "lon": -1})
+                da_rcm_hist = lib_spatial.apply_agcd_data_mask(da_rcm_hist)
+                logger.debug(da_rcm_hist)
+            da_rcm_hist = da_rcm_hist.chunk({"time": "auto", "lat": -1, "lon": -1})
             logger.info(f"Upscaling historical RCM to GCM grid")
-            da_rcm_hist_up = lib.regrid(da_rcm_hist_masked, da_gcm_hist, reuse_regrid_weights=True)
+            da_rcm_hist_up = lib.regrid(da_rcm_hist, da_gcm_hist, reuse_regrid_weights=True)
+            #< Mask data
+            if not region is None:
+                logger.info("Masking historical RCM.")
+                da_rcm_hist_up = lib_spatial.apply_region_mask(da_rcm_hist_up, region.replace("_", " "))
+                logger.debug(da_rcm_hist_up)
             logger.info(f"Calculating {process} for upscaled historical RCM")
             X_rcm_hist = fun(da_rcm_hist_up, **process_kwargs)
         elif upscale2ref:
-            #< Mask data
-            if not region is None:
-                logger.info("Masking historical RCM.")
-                da_rcm_hist_masked = lib_spatial.apply_region_mask(da_rcm_hist, region.replace("_", " "))
-                logger.debug(da_rcm_hist_masked)
             #< AGCD mask
             if agcd_mask:
                 logger.info("Masking historical RCM with AGCD mask")
-                da_rcm_hist_masked = lib_spatial.apply_agcd_data_mask(da_rcm_hist_masked)
-                logger.debug(da_rcm_hist_masked)
-            da_rcm_hist_masked = da_rcm_hist_masked.chunk({"time": "auto", "lat": -1, "lon": -1})
+                da_rcm_hist = lib_spatial.apply_agcd_data_mask(da_rcm_hist)
+                logger.debug(da_rcm_hist)
+            da_rcm_hist = da_rcm_hist.chunk({"time": "auto", "lat": -1, "lon": -1})
             logger.info(f"Upscaling historical RCM to reference grid")
-            da_rcm_hist_up = lib.regrid(da_rcm_hist_masked, da_ref_grid, reuse_regrid_weights=True)
+            da_rcm_hist_up = lib.regrid(da_rcm_hist, da_ref_grid, reuse_regrid_weights=True)
+            #< Mask data
+            if not region is None:
+                logger.info("Masking historical RCM.")
+                da_rcm_hist_up = lib_spatial.apply_region_mask(da_rcm_hist_up, region.replace("_", " "))
+                logger.debug(da_rcm_hist_up)
             logger.info(f"Calculating {process} for upscaled historical RCM")
             X_rcm_hist = fun(da_rcm_hist_up, **process_kwargs)
         else:
-            logger.info(f"Calculating {process} for RCM")
-            X_rcm_hist = fun(da_rcm_hist, **process_kwargs)
             #< Mask data
             if not region is None:
-                logger.info("Masking X_rcm_hist.")
-                X_rcm_hist = lib_spatial.apply_region_mask(X_rcm_hist, region.replace("_", " "))
-                logger.debug(X_rcm_hist)
+                logger.info("Masking")
+                da_rcm_hist = lib_spatial.apply_region_mask(da_rcm_hist, region.replace("_", " "))
+                logger.debug(da_rcm_hist)
             #< AGCD mask
             if agcd_mask:
-                logger.info("Masking X_rcm_hist with AGCD mask")
-                X_rcm_hist = lib_spatial.apply_agcd_data_mask(X_rcm_hist)
-                logger.debug(X_rcm_hist)
+                logger.info("Masking da_rcm_hist with AGCD mask")
+                da_rcm_hist = lib_spatial.apply_agcd_data_mask(da_rcm_hist)
+                logger.debug(da_rcm_hist)
+            logger.info(f"Calculating {process} for RCM")
+            X_rcm_hist = fun(da_rcm_hist, **process_kwargs)
     if reuse_X and not os.path.isfile(ifile_X_rcm_hist):
         logger.info(f"Saving {ifile_X_rcm_hist} for RCM to netcdf")
         lib.write2nc(X_rcm_hist, ifile_X_rcm_hist)
+
 
     if reuse_X and os.path.isfile(ifile_X_rcm_fut):
         logger.info(f"Using existing {ifile_X_rcm_fut} for RCM ")
@@ -170,50 +171,50 @@ def potential_added_value(da_gcm_hist, da_gcm_fut, da_rcm_hist, da_rcm_fut, proc
         logger.debug(X_rcm_fut)
     elif not reuse_X or not os.path.isfile(ifile_X_rcm_fut):
         if upscale2gcm:
-            #< Mask data
-            if not region is None:
-                logger.info("Masking future RCM.")
-                da_rcm_fut_masked = lib_spatial.apply_region_mask(da_rcm_fut, region.replace("_", " "))
-                logger.debug(da_rcm_fut_masked)
             #< AGCD mask
             if agcd_mask:
                 logger.info("Masking future RCM with AGCD mask")
-                da_rcm_fut_masked = lib_spatial.apply_agcd_data_mask(da_rcm_fut_masked)
-                logger.debug(da_rcm_fut_masked)
-            da_rcm_fut_masked = da_rcm_fut_masked.chunk({"time": "auto", "lat": -1, "lon": -1})
+                da_rcm_fut = lib_spatial.apply_agcd_data_mask(da_rcm_fut)
+                logger.debug(da_rcm_fut)
+            da_rcm_fut = da_rcm_fut.chunk({"time": "auto", "lat": -1, "lon": -1})
             logger.info(f"Upscaling future RCM to GCM grid")
-            da_rcm_fut_up = lib.regrid(da_rcm_fut_masked, da_gcm_fut, reuse_regrid_weights=True)
+            da_rcm_fut_up = lib.regrid(da_rcm_fut, da_gcm_fut, reuse_regrid_weights=True)
+            #< Mask data
+            if not region is None:
+                logger.info("Masking future RCM.")
+                da_rcm_fut_up = lib_spatial.apply_region_mask(da_rcm_fut_up, region.replace("_", " "))
+                logger.debug(da_rcm_fut_up)
             logger.info(f"Calculating {process} for upscaled future RCM")
             X_rcm_fut = fun(da_rcm_fut_up, **process_kwargs)
         elif upscale2ref:
-            #< Mask data
-            if not region is None:
-                logger.info("Masking future RCM.")
-                da_rcm_fut_masked = lib_spatial.apply_region_mask(da_rcm_fut, region.replace("_", " "))
-                logger.debug(da_rcm_fut_masked)
             #< AGCD mask
             if agcd_mask:
                 logger.info("Masking future RCM with AGCD mask")
-                da_rcm_fut_masked = lib_spatial.apply_agcd_data_mask(da_rcm_fut_masked)
-                logger.debug(da_rcm_fut_masked)
-            da_rcm_fut_masked = da_rcm_fut_masked.chunk({"time": "auto", "lat": -1, "lon": -1})
+                da_rcm_fut = lib_spatial.apply_agcd_data_mask(da_rcm_fut)
+                logger.debug(da_rcm_fut)
+            da_rcm_fut = da_rcm_fut.chunk({"time": "auto", "lat": -1, "lon": -1})
             logger.info(f"Upscaling future RCM to reference grid")
-            da_rcm_fut_up = lib.regrid(da_rcm_fut_masked, da_ref_grid, reuse_regrid_weights=True)
+            da_rcm_fut_up = lib.regrid(da_rcm_fut, da_ref_grid, reuse_regrid_weights=True)
+            #< Mask data
+            if not region is None:
+                logger.info("Masking future RCM.")
+                da_rcm_fut_up = lib_spatial.apply_region_mask(da_rcm_fut_up, region.replace("_", " "))
+                logger.debug(da_rcm_fut_up)
             logger.info(f"Calculating {process} for upscaled future RCM")
             X_rcm_fut = fun(da_rcm_fut_up, **process_kwargs)
         else:
-            logger.info(f"Calculating {process} for RCM")
-            X_rcm_fut = fun(da_rcm_fut, **process_kwargs)
             #< Mask data
             if not region is None:
-                logger.info("Masking X_rcm_fut.")
-                X_rcm_fut = lib_spatial.apply_region_mask(X_rcm_fut, region.replace("_", " "))
-                logger.debug(X_rcm_fut)
+                logger.info("Masking da_rcm_fut.")
+                da_rcm_fut = lib_spatial.apply_region_mask(da_rcm_fut, region.replace("_", " "))
+                logger.debug(da_rcm_fut)
             #< AGCD mask
             if agcd_mask:
-                logger.info("Masking X_rcm_fut with AGCD mask")
-                X_rcm_fut = lib_spatial.apply_agcd_data_mask(X_rcm_fut)
-                logger.debug(X_rcm_fut)
+                logger.info("Masking da_rcm_fut with AGCD mask")
+                da_rcm_fut = lib_spatial.apply_agcd_data_mask(da_rcm_fut)
+                logger.debug(da_rcm_fut)
+            logger.info(f"Calculating {process} for RCM")
+            X_rcm_fut = fun(da_rcm_fut, **process_kwargs)
     if reuse_X and not os.path.isfile(ifile_X_rcm_fut):
         logger.info(f"Saving {ifile_X_rcm_fut} for RCM to netcdf")
         lib.write2nc(X_rcm_fut, ifile_X_rcm_fut)
@@ -238,40 +239,42 @@ def potential_added_value(da_gcm_hist, da_gcm_fut, da_rcm_hist, da_rcm_fut, proc
             logger.info(f"Calculating {process} for historical GCM")
             X_gcm_hist = fun(da_gcm_hist_masked, **process_kwargs)
         elif upscale2ref:
-            #< Mask data
-            if not region is None:
-                logger.info("Masking historical GCM.")
-                da_gcm_hist_masked = lib_spatial.apply_region_mask(da_gcm_hist, region.replace("_", " "))
-                logger.debug(da_gcm_hist_masked)
             #< AGCD mask
             if agcd_mask:
                 logger.info("Masking future GCM with AGCD mask")
-                da_gcm_hist_masked = lib_spatial.apply_agcd_data_mask(da_gcm_hist_masked)
-                logger.debug(da_gcm_hist_masked)
-            da_gcm_hist_masked = da_gcm_hist_masked.chunk({"time": "auto", "lat": -1, "lon": -1})
+                da_gcm_hist = lib_spatial.apply_agcd_data_mask(da_gcm_hist)
+                logger.debug(da_gcm_hist)
+            da_gcm_hist = da_gcm_hist.chunk({"time": "auto", "lat": -1, "lon": -1})
             logger.info(f"Upscaling future GCM to reference grid")
-            da_gcm_hist_up = lib.regrid(da_gcm_hist_masked, da_ref_grid, reuse_regrid_weights=True)
+            da_gcm_hist_up = lib.regrid(da_gcm_hist, da_ref_grid, reuse_regrid_weights=True)
+            #< Mask data
+            if not region is None:
+                logger.info("Masking historical GCM.")
+                da_gcm_hist_up = lib_spatial.apply_region_mask(da_gcm_hist_up, region.replace("_", " "))
+                logger.debug(da_gcm_hist_up)
             logger.info(f"Calculating {process} for upscaled future GCM")
             X_gcm_hist = fun(da_gcm_hist_up, **process_kwargs)
         else:
-            logger.info(f"Calculating {process} for GCM")
-            X_gcm_hist = fun(da_gcm_hist, **process_kwargs)
-            logger.info(f"Regridding GCM data to RCM grid")
-            X_gcm_hist = lib.regrid(X_gcm_hist, X_rcm_hist)
-            #< Mask data
-            if not region is None:
-                logger.info("Masking X_gcm_hist.")
-                X_gcm_hist = lib_spatial.apply_region_mask(X_gcm_hist, region.replace("_", " "))
-                logger.debug(X_gcm_hist)
             #< AGCD mask
             if agcd_mask:
-                logger.info("Masking X_gcm_hist with AGCD mask")
-                X_gcm_hist = lib_spatial.apply_agcd_data_mask(X_gcm_hist)
-                logger.debug(X_gcm_hist)
+                logger.info("Masking da_gcm_hist_up with AGCD mask")
+                da_gcm_hist = lib_spatial.apply_agcd_data_mask(da_gcm_hist)
+                logger.debug(da_gcm_hist)
+            logger.info(f"Regridding GCM data to RCM grid")
+            da_gcm_hist_up = lib.regrid(da_gcm_hist, da_rcm_hist)
+            #< Mask data
+            if not region is None:
+                logger.info("Masking da_gcm_hist_up.")
+                da_gcm_hist_up = lib_spatial.apply_region_mask(da_gcm_hist_up, region.replace("_", " "))
+                logger.debug(da_gcm_hist_up)
+            logger.info(f"Calculating {process} for GCM")
+            X_gcm_hist = fun(da_gcm_hist_up, **process_kwargs)
+            
     if reuse_X and not os.path.isfile(ifile_X_gcm_hist):
         logger.info(f"Saving {ifile_X_gcm_hist} for GCM to netcdf")
         lib.write2nc(X_gcm_hist, ifile_X_gcm_hist)
     
+
     if reuse_X and os.path.isfile(ifile_X_gcm_fut):
         logger.info(f"Using existing {ifile_X_gcm_fut} for GCM ")
         X_gcm_fut = xr.open_dataarray(ifile_X_gcm_fut)
@@ -291,36 +294,36 @@ def potential_added_value(da_gcm_hist, da_gcm_fut, da_rcm_hist, da_rcm_fut, proc
             logger.info(f"Calculating {process} for future GCM")
             X_gcm_fut = fun(da_gcm_fut_masked, **process_kwargs)
         elif upscale2ref:
-            #< Mask data
-            if not region is None:
-                logger.info("Masking future GCM.")
-                da_gcm_fut_masked = lib_spatial.apply_region_mask(da_gcm_fut, region.replace("_", " "))
-                logger.debug(da_gcm_fut_masked)
             #< AGCD mask
             if agcd_mask:
                 logger.info("Masking future GCM with AGCD mask")
-                da_gcm_fut_masked = lib_spatial.apply_agcd_data_mask(da_gcm_fut_masked)
-                logger.debug(da_gcm_fut_masked)
-            da_gcm_fut_masked = da_gcm_fut_masked.chunk({"time": "auto", "lat": -1, "lon": -1})
+                da_gcm_fut = lib_spatial.apply_agcd_data_mask(da_gcm_fut)
+                logger.debug(da_gcm_fut)
+            da_gcm_fut = da_gcm_fut.chunk({"time": "auto", "lat": -1, "lon": -1})
             logger.info(f"Upscaling future GCM to reference grid")
-            da_gcm_fut_up = lib.regrid(da_gcm_fut_masked, da_ref_grid, reuse_regrid_weights=True)
+            da_gcm_fut_up = lib.regrid(da_gcm_fut, da_ref_grid, reuse_regrid_weights=True)
+            #< Mask data
+            if not region is None:
+                logger.info("Masking future GCM.")
+                da_gcm_fut_up = lib_spatial.apply_region_mask(da_gcm_fut_up, region.replace("_", " "))
+                logger.debug(da_gcm_fut_up)
             logger.info(f"Calculating {process} for upscaled future GCM")
             X_gcm_fut = fun(da_gcm_fut_up, **process_kwargs)
         else:
-            logger.info(f"Calculating {process} for GCM")
-            X_gcm_fut = fun(da_gcm_fut, **process_kwargs)
             logger.info(f"Regridding GCM data to RCM grid")
-            X_gcm_fut = lib.regrid(X_gcm_fut, X_rcm_hist)
+            da_gcm_fut_up = lib.regrid(da_gcm_fut, da_rcm_fut)
             #< Mask data
             if not region is None:
-                logger.info("Masking X_gcm_fut.")
-                X_gcm_fut = lib_spatial.apply_region_mask(X_gcm_fut, region.replace("_", " "))
-                logger.debug(X_gcm_fut)
+                logger.info("Masking da_gcm_fut_up.")
+                da_gcm_fut_up = lib_spatial.apply_region_mask(da_gcm_fut_up, region.replace("_", " "))
+                logger.debug(da_gcm_fut_up)
             #< AGCD mask
             if agcd_mask:
-                logger.info("Masking X_gcm_fut with AGCD mask")
-                X_gcm_fut = lib_spatial.apply_agcd_data_mask(X_gcm_fut)
-                logger.debug(X_gcm_fut)
+                logger.info("Masking da_gcm_fut_up with AGCD mask")
+                da_gcm_fut_up = lib_spatial.apply_agcd_data_mask(da_gcm_fut_up)
+                logger.debug(da_gcm_fut_up)
+            logger.info(f"Calculating {process} for GCM")
+            X_gcm_fut = fun(da_gcm_fut_up, **process_kwargs)
     if reuse_X and not os.path.isfile(ifile_X_gcm_fut):
         logger.info(f"Saving {ifile_X_gcm_fut} for GCM to netcdf")
         lib.write2nc(X_gcm_fut, ifile_X_gcm_fut)

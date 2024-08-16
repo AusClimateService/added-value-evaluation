@@ -80,11 +80,7 @@ def variability(da, process, process_kwargs={}, grouping="", dim="time", agcd_ma
         xarray dataset : Variability
     """
     assert not (upscale2gcm and upscale2ref), f"upscale2gcm and upscale2ref cannot both be True!"
-    #< Mask data
-    if not region is None:
-        logger.info(f"Masking {region}.")
-        da = lib_spatial.apply_region_mask(da, region.replace("_", " "))
-        logger.debug(da)
+
     #< AGCD mask
     if agcd_mask:
         logger.info("Masking with AGCD mask")
@@ -100,6 +96,14 @@ def variability(da, process, process_kwargs={}, grouping="", dim="time", agcd_ma
         da = da.chunk({"time": "auto", "lat": -1, "lon": -1})
         logger.info(f"Upscaling to reference grid")
         da = lib.regrid(da, da_ref_grid, reuse_regrid_weights=True)
+        logger.debug(da)
+
+    #< Mask data
+    if not region is None:
+        logger.info(f"Masking {region}.")
+        da = lib_spatial.apply_region_mask(da, region.replace("_", " "))
+        logger.debug(da)
+    
 
     #< Search for "process" function in library
     if hasattr(lib, process):
