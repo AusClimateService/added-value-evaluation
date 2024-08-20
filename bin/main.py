@@ -339,7 +339,7 @@ def get_ofile(odir="./", measure="", variable="", gcm="", scenario="", rcm="", o
     for key in kwargs:
         kwargs_list.append(key)
         kwargs_list.append(kwargs[key])
-    ofile = f"{odir}/{measure}_{variable}_{'_'.join([str(i).replace('.','p') for i in kwargs_list])}_{gcm}_{scenario}_{rcm}_{obs}_{freq}_{region.replace(' ', '_')}_{season}"
+    ofile = f"{odir}/{measure.replace('_','-')}_{variable}_{'_'.join([str(i).replace('.','p') for i in kwargs_list])}_{gcm}_{scenario}_{rcm}_{obs}_{freq}_{region.replace(' ', '_')}_{season}"
     if upscale2gcm:
         ofile = ofile + "_upscale2gcm_"
     if upscale2ref:

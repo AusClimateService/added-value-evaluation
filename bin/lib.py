@@ -13,6 +13,11 @@ import sys
 import cmdline_provenance as cmdprov
 import tempfile
 import lib_standards
+import lib_spatial
+import glob
+import re
+from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
+import cartopy.crs as ccrs
 
 
 def get_logger(name, level='info'):
@@ -833,3 +838,264 @@ def heatmap(arr, xdim="", ydim="", xlabels='', ylabels='', fmt="{:.2f}", title='
     plt.tight_layout()
 
     return fig
+
+
+def tidy_filename(filename):
+    #< Replace double underscore with single underscore
+    while "__" in filename:
+        filename = filename.replace("__", "_")
+    if os.path.basename(filename).startswith("_"):
+        filename = os.path.join(os.path.dirname(filename), os.path.basename(filename)[1:])
+    return filename
+
+
+def get_filename(measure, variable, gcm, scenario, rcm, obs, freq, region, season, datestart_hist="", dateend_hist="", datestart_fut="", dateend_fut="", upscale2ref=False, upscale2gcm=False, kwargs=dict()):
+    if (upscale2gcm and upscale2ref):
+        raise Exception(f"upscale2gcm and upscale2ref cannot both be True!")
+    if upscale2ref:
+        basedir = "/g/data/tp28/Climate_Hazards/ACS_added_value/added_value_upscale_ref"
+    elif upscale2gcm:
+        basedir = "/g/data/tp28/Climate_Hazards/ACS_added_value/added_value_upscale_gcm"
+    else:
+        basedir = "/g/data/tp28/Climate_Hazards/ACS_added_value/added_value_rcm_grid"
+    # Create a list of kwargs in the style of [key0, val0, key1, val1, ... keyN, valN]
+    kwargs_list = []
+    for key in kwargs:
+        kwargs_list.append(key)
+        kwargs_list.append(kwargs[key])
+    ofile = f"{basedir}/{measure}_{variable}_{'_'.join([str(i).replace('.','p') for i in kwargs_list])}_{gcm}_{scenario}_{rcm}_{obs}_{freq}_{region.replace(' ', '_')}_{season}"
+    if upscale2gcm:
+        ofile = ofile + "_upscale2gcm_"
+    if upscale2ref:
+        ofile = ofile + "_upscale2ref_"
+    if datestart_hist and dateend_hist:
+        ofile = ofile + f"_{datestart_hist}-{dateend_hist}"
+    if datestart_fut and dateend_fut:
+        ofile = ofile + f"_{datestart_fut}-{dateend_fut}"
+    ofile = ofile + ".nc"
+    ofile = tidy_filename(ofile)
+    return ofile
+
+
+def get_files(measure, variable="*", gcm="*", scen="*", region="*", season="*", rcm="BARPA-R", freq="day", upscale2ref=False, upscale2gcm=False, kwargs=dict()):
+    kwargs_in = kwargs.copy()
+    kwargs = {}
+    if measure.startswith("AV"):
+        kwargs["datestart_hist"] = "19850101"
+        kwargs["dateend_hist"] = "20141231"
+        obs = "AGCD"
+    elif measure.startswith("PAV") or measure.startswith("RAV"):
+        kwargs["datestart_hist"] = "19850101"
+        kwargs["dateend_hist"] = "20141231"
+        kwargs["datestart_fut"] = "20700101"
+        kwargs["dateend_fut"] = "20991231"
+        if measure.startswith("RAV"):
+            obs = "AGCD"
+        else:
+            obs = ""
+    kwargs["kwargs"] = kwargs_in
+
+    filename = get_filename(
+        measure,
+        variable,
+        gcm,
+        scen,
+        rcm,
+        obs,
+        freq,
+        region,
+        season,
+        **kwargs,
+        upscale2ref=upscale2ref,
+        upscale2gcm=upscale2gcm,
+    )
+    file_list = glob.glob(filename)
+    if not file_list:
+        raise Exception(f"No files found! {filename}")
+    return file_list
+
+
+def match_pattern(filename, addon="_upscale2ref_"):
+                  # AVse                    _pr                        _quantile                          _0p9                        _ACCESS-CM2            _historical             _BARPA-R               _AGCD                 _day                     _Australia                 _MAM                                         _upscale2ref_19850101-20141231.nc
+    pattern1 = f"(?P<measure>[-a-zA-Z0-9]+)_(?P<varname>[-a-zA-Z0-9]+)_(?P<quantile_method>[-a-zA-Z0-9]+)_(?P<quantile>[-a-zA-Z0-9]+)_(?P<gcm>[-a-zA-Z0-9]+)_(?P<scen>[-a-zA-Z0-9]+)_(?P<rcm>[-a-zA-Z0-9]+)_(?P<obs>[-a-zA-Z0-9]+)_(?P<freq>[-a-zA-Z0-9]+)_(?P<region>[-_a-zA-Z0-9]+)_(?P<season>(annual)|(DJF)|(MAM)|(JJA)|(SON)){addon}(?P<datestart1>[0-9]+)-(?P<dateend1>[0-9]+).nc"
+    pattern2 = f"(?P<measure>[-a-zA-Z0-9]+)_(?P<varname>[-a-zA-Z0-9]+)_(?P<quantile_method>[-a-zA-Z0-9]+)_(?P<quantile>[-a-zA-Z0-9]+)_(?P<gcm>[-a-zA-Z0-9]+)_(?P<scen>[-a-zA-Z0-9]+)_(?P<rcm>[-a-zA-Z0-9]+)_(?P<obs>[-a-zA-Z0-9]+)_(?P<freq>[-a-zA-Z0-9]+)_(?P<region>[-_a-zA-Z0-9]+)_(?P<season>(annual)|(DJF)|(MAM)|(JJA)|(SON)){addon}(?P<datestart1>[0-9]+)-(?P<dateend1>[0-9]+)_(?P<datestart2>[0-9]+)-(?P<dateend2>[0-9]+).nc"
+    pattern3 = f"(?P<measure>[-a-zA-Z0-9]+)_(?P<varname>[-a-zA-Z0-9]+)_(?P<quantile_method>[-a-zA-Z0-9]+)_(?P<quantile>[-a-zA-Z0-9]+)_(?P<gcm>[-a-zA-Z0-9]+)_(?P<scen>[-a-zA-Z0-9]+)_(?P<rcm>[-a-zA-Z0-9]+)_(?P<freq>[-a-zA-Z0-9]+)_(?P<region>[-_a-zA-Z0-9]+)_(?P<season>(annual)|(DJF)|(MAM)|(JJA)|(SON)){addon}(?P<datestart1>[0-9]+)-(?P<dateend1>[0-9]+)_(?P<datestart2>[0-9]+)-(?P<dateend2>[0-9]+).nc"
+    dirname = os.path.dirname(filename)
+    basename = os.path.basename(filename)
+    if re.search(pattern1, basename):
+        matches = re.search(pattern1, basename).groupdict()
+    elif re.search(pattern2, basename):
+        matches = re.search(pattern2, basename).groupdict()
+    elif re.search(pattern3, basename):
+        matches = re.search(pattern3, basename).groupdict()
+    return matches
+
+def get_varname_from_file(filename, addon="_upscale2ref_"):
+    return match_pattern(filename, addon)["varname"]
+
+def get_gcm_from_file(filename, addon="_upscale2ref_"):
+    return match_pattern(filename, addon)["gcm"]
+
+def get_scen_from_file(filename, addon="_upscale2ref_"):
+    return match_pattern(filename, addon)["scen"]
+
+def get_region_from_file(filename, addon="_upscale2ref_"):
+    return match_pattern(filename, addon)["region"]
+
+def get_season_from_file(filename, addon="_upscale2ref_"):
+    return match_pattern(filename, addon)["season"]
+
+def get_rcm_from_file(filename, addon="_upscale2ref_"):
+    return match_pattern(filename, addon)["rcm"]
+
+def get_quantile_from_file(filename, addon="_upscale2ref_"):
+    return match_pattern(filename, addon)["quantile"]
+
+
+def load_av_data(measure, variable="*", gcm="*", scen="*", region="*", season="*", rcm="BARPA-R", freq="day", kwargs=dict(), upscale2ref=False, upscale2gcm=False, region_mask=None):
+    if upscale2ref:
+        addon = "_upscale2ref_"
+    elif upscale2gcm:
+        addon = "_upscale2gcm_"
+    else:
+        addon = "_"
+
+    file_list = sorted(get_files(
+        measure,
+        variable,
+        gcm,
+        scen,
+        region,
+        season,
+        rcm,
+        freq,
+        upscale2ref,
+        upscale2gcm,
+        kwargs,
+    ))
+    varnames = []
+    gcms = []
+    scens = []
+    regions = []
+    seasons = []
+    rcms = []
+    quantiles = []
+    for f in file_list:
+        if not get_varname_from_file(f, addon) in varnames:
+            varnames.append(get_varname_from_file(f, addon))
+        if not get_gcm_from_file(f, addon) in gcms:
+            gcms.append(get_gcm_from_file(f, addon))
+        if not get_scen_from_file(f, addon) in scens:
+            scens.append(get_scen_from_file(f, addon))
+        if not get_region_from_file(f, addon) in regions:
+            regions.append(get_region_from_file(f, addon))
+        if not get_season_from_file(f, addon) in seasons:
+            seasons.append(get_season_from_file(f, addon))
+        if not get_rcm_from_file(f, addon) in rcms:
+            rcms.append(get_rcm_from_file(f, addon))
+        if not get_quantile_from_file(f, addon) in quantiles:
+            quantiles.append(get_quantile_from_file(f, addon))
+
+    ds = []
+    for varname in varnames:
+        ds_gcms = []
+        for gcm in gcms:
+            ds_scens = []
+            for scen in scens:
+                ds_regions = []
+                for region in regions:
+                    ds_seasons = []
+                    for season in seasons:
+                        ds_rcms = []
+                        for rcm in rcms:
+                            ds_quantiles = []
+                            for quantile in quantiles:
+                                kwargs = dict(quantile=quantile)
+                                try:
+                                    one_file_list = get_files(
+                                        measure,
+                                        varname,
+                                        gcm,
+                                        scen,
+                                        region,
+                                        season,
+                                        rcm,
+                                        freq,
+                                        upscale2ref,
+                                        upscale2gcm,
+                                        kwargs,
+                                    )
+                                    _ds = xr.open_dataset(one_file_list[0])
+                                except Exception as e:
+                                    _ds = xr.zeros_like(_ds)
+                                    _ds = xr.where(_ds == 0, np.nan, np.nan)
+                                ds_quantiles.append( _ds )
+                            ds_rcms.append( xr.concat(ds_quantiles, pd.Index(quantiles, name="quantile")) )
+                        ds_seasons.append( xr.concat(ds_rcms, pd.Index(rcms, name="rcm")) )
+                    ds_regions.append( xr.concat(ds_seasons, pd.Index(seasons, name="season")) )
+                ds_scens.append( xr.concat(ds_regions, pd.Index(regions, name="region")) )
+            ds_gcms.append( xr.concat(ds_scens, pd.Index(scens, name="scenario")) )
+        ds.append( xr.concat(ds_gcms, pd.Index(gcms, name="gcm")) )
+    ds = xr.concat(ds, pd.Index(varnames, name="variable"))
+
+    # Make sure we sort this nicely
+    ds = ds.sortby(ds["quantile"])
+    ds = ds.sortby(ds["rcm"])
+    ds = ds.sortby(ds["season"])
+    ds = ds.sortby(ds["region"])
+    ds = ds.sortby(ds["scenario"])
+    ds = ds.sortby(ds["gcm"])
+    ds = ds.sortby(ds["variable"])
+
+    # Maybe mask
+    if region_mask:
+        ds = lib_spatial.apply_region_mask(ds, region_mask)
+
+    return ds
+
+
+def av_da2dict(da):
+    if len(da.dims) != 2:
+        raise Exception(f"Can only convert 2-dimensional datasets to dictionary!")
+    data_dict = {}
+    dim0 = list(da.dims)[0]
+    dim1 = list(da.dims)[1]
+    for d0 in da[dim0].data:
+        for d1 in da[dim1].data:
+            if not d0 in data_dict:
+                data_dict[d0] = {}
+            data_dict[d0][d1] = da.sel(**{f"{dim0}":d0, f"{dim1}":d1}).values
+    return data_dict
+
+
+def mean_over_other(ds, *exclude_dims):
+    all_dims = ds.dims
+    mean_dims = []
+    for dim in all_dims:
+        if not dim in exclude_dims:
+            mean_dims.append(dim)
+    print(f"Calculating mean over {mean_dims}")
+    return ds.mean(mean_dims)
+
+
+def hinton_wrapper(da, xdim, ydim):
+    da_mean = mean_over_other(da.squeeze(), xdim, ydim)
+    da_mean = da_mean.transpose(xdim,ydim)
+    data_dict = av_da2dict(da_mean)
+    fig, ax = plt.subplots()
+    lib_standards.hinton(ax, data_dict)
+    return ax
+
+
+def plot_map(da, **kwargs):
+    mean_over_other(da, "lat", "lon").plot.pcolormesh(subplot_kws=dict(projection=ccrs.PlateCarree()), transform=ccrs.PlateCarree(), **kwargs)
+    ax = plt.gca()
+    gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=True, linewidth=1, color='gray', alpha=0.5, linestyle='--')
+    gl.top_labels = False
+    gl.right_labels = False
+    gl.left_labels = True
+    gl.bottom_labels = True
+    gl.xformatter = LONGITUDE_FORMATTER
+    gl.yformatter = LATITUDE_FORMATTER
+    ax.coastlines()
+    return ax
