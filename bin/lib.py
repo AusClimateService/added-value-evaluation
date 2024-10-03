@@ -18,6 +18,7 @@ import glob
 import re
 from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 import cartopy.crs as ccrs
+import copy
 
 
 def get_logger(name, level='info'):
@@ -57,7 +58,7 @@ def str2bool(v):
 
     Args:
         v (str): String to be converted
-    
+
     Returns:
         bool : True/False
     """
@@ -180,7 +181,7 @@ def convert_units(ds):
                 ds[key] = ds[key] + 273.15
                 ds[key].attrs["units"] = "K"
                 logger.debug("Converting units from degrees_Celsius to K")
-        
+
             elif ds[key].attrs["units"] in ["kg m-2 s-1", "kg m**-2 s**-1"]:
                 ds[key] = ds[key] * 86400
                 ds[key].attrs["units"] = "mm"
@@ -195,7 +196,7 @@ def open_dataset(ifiles, **kwargs):
     Args:
         ifiles (str): Path/File to be opened
         kwargs (dict): Keyword arguments to be passed to xarray.open_mfdataset
-    
+
     Returns:
         xarray.Dataset
     """
@@ -229,7 +230,8 @@ def AVse(X_obs, X_gdd, X_rcm):
     with xr.set_options(keep_attrs=True):
         out = ((X_gdd-X_obs)**2) - ((X_rcm-X_obs)**2)
     return out
-    
+
+
 def AVse_norm(X_obs, X_gdd, X_rcm):
     """
     Calculate combined error of the GDD and RCM using the square error between the global
@@ -296,6 +298,7 @@ def AVrmse(X_obs, X_gdd, X_rcm):
         out = np.sqrt((X_gdd-X_obs)**2) - np.sqrt((X_rcm-X_obs)**2)
     return out
 
+
 def AVperkins(X_obs, X_gdd, X_rcm,spacing=1):
     """
     Calculate added value (AV) using a Perkins Skill Score between the global
@@ -322,6 +325,7 @@ def AVperkins(X_obs, X_gdd, X_rcm,spacing=1):
     pss_gdd = np.minimum(hist_gdd,hist_obs).sum()
     pss_rcm = np.minimum(hist_rcm,hist_obs).sum()
     return pss_rcm - pss_gdd
+
 
 def AVcorr(X_obs, X_gdd, X_rcm):
     """
@@ -434,6 +438,22 @@ def AVse_frac(X_obs, X_gdd, X_rcm, thresh=0):
         av_frac = av_frac * 100
     return av_frac
 
+
+def frac_ss(da, thresh=0):
+    """
+    Calculate fraction of mean added value (AV) over lat/lon using added value as input.
+
+    :param av: Added Value
+    :return:   xarray containting the AV fraction
+    """
+
+    with xr.set_options(keep_attrs=True):
+        #< Count how often av is larger than threshold and divide by size of non nans
+        av_frac = (xr.where(da>thresh, 1, 0)).sum(['lat','lon']) / (xr.where(np.isnan(da), 0, 1)).sum(['lat','lon'])
+        av_frac = av_frac - 0.5
+    return av_frac
+
+
 def PAVdiff(X_gdd, X_rcm):
     """
     Calculate the difference between the global driving model (gdd) and the regional climate model (rcm).
@@ -444,7 +464,7 @@ def PAVdiff(X_gdd, X_rcm):
 
     with xr.set_options(keep_attrs=True):
         pav = X_gdd - X_rcm
-        
+
     return pav
 
 def PAVdiff_rel(X_gdd, X_rcm):
@@ -457,7 +477,7 @@ def PAVdiff_rel(X_gdd, X_rcm):
 
     with xr.set_options(keep_attrs=True):
         pav = 1 - X_gdd / X_rcm
-        
+
     return pav
 
 def PAVcorr(X_gdd, X_rcm):
@@ -646,7 +666,7 @@ def find_varname_in_acceptable(ds, accept=[]):
     Args:
         ds (xarray dataset): Input dataset to delete attribute from.
         accept (list): List of acceptable names.
-    
+
     Returns:
         string : The acceptable name found.
     """
@@ -664,7 +684,7 @@ def find_dimname_in_acceptable(ds, accept=[]):
     Args:
         ds (xarray dataset): Input dataset to delete attribute from.
         accept (list): List of acceptable names.
-    
+
     Returns:
         string : The acceptable name found.
     """
@@ -1078,12 +1098,82 @@ def mean_over_other(ds, *exclude_dims):
     return ds.mean(mean_dims)
 
 
-def hinton_wrapper(da, xdim, ydim):
+def hinton_wrapper(da, xdim, ydim, sig=None, add_ens_avfrac_mean=False, ens_mean_dim=None, robust=False):
+    if add_ens_avfrac_mean:
+        ens_mean = frac_ss(da)
+        if ens_mean_dim is None or not ens_mean_dim in ens_mean.dims:
+            raise ValueError(f"{ens_mean_dim} dimension not found! Cannot calculate ensemble mean!")
+        ens_mean = ens_mean.mean(ens_mean_dim)
+        ens_mean = ens_mean.expand_dims(dim={ens_mean_dim: ["Ensemble-mean"]})
     da_mean = mean_over_other(da.squeeze(), xdim, ydim)
+    if add_ens_avfrac_mean:
+        da_mean = xr.concat([da_mean, ens_mean], dim=ens_mean_dim)
+        sig = xr.concat([sig, ens_mean], dim=ens_mean_dim)
+        sig = xr.where(sig[ens_mean_dim]=="Ensemble-mean", None, sig)
+
+    da_mean = da_mean.transpose(xdim,ydim)
+    sig = sig.transpose(xdim,ydim)
+    data_dict = av_da2dict(da_mean)
+    sig_dict = None
+    sig_dict_bool = None
+    if sig is not None:
+        sig = sig.squeeze()
+        sig_dict = av_da2dict(sig)
+        sig_dict_bool = copy.deepcopy(sig_dict)
+        for key in data_dict:
+            for key2 in data_dict[key]:
+                # if key == "Ensemble-mean" or key2 == "Ensemble-mean":
+                #     if not "Ensemble-mean" in sig_dict_bool:
+                #         sig_dict_bool[key] = {}
+                #     sig_dict_bool[key][key2] = None
+                if data_dict[key][key2] > 0. and sig_dict[key][key2] > 0.:
+                    sig_dict_bool[key][key2] = 1
+                elif data_dict[key][key2] < 0. and sig_dict[key][key2] < 0.:
+                    sig_dict_bool[key][key2] = 1
+                else:
+                    sig_dict_bool[key][key2] = None
+                # print(key, key2, data_dict[key][key2], sig_dict[key][key2], sig_dict_bool[key][key2])
+    fig, ax = plt.subplots()
+    lib_standards.hinton(ax, data_dict, sig=sig_dict_bool, robust=robust)
+    return ax
+
+
+def table_plot_wrapper(da, xdim, ydim, sig=None, add_ens_avfrac_mean=False, robust=False):
+    if add_ens_avfrac_mean:
+        ens_mean = frac_ss(da)
+        if not "gcm" in ens_mean.dims:
+            raise ValueError("gcm dimension not found! Cannot calculate ensemble mean!")
+        if not "rcm" in ens_mean.dims:
+            raise ValueError("rcm dimension not found! Cannot calculate ensemble mean!")
+        ens_mean = ens_mean.mean(["gcm", "rcm"])
+        ens_mean = ens_mean.expand_dims(dim={"gcm": ["Ensemble-mean"]})
+    da_mean = mean_over_other(da.squeeze(), xdim, ydim)
+    if add_ens_avfrac_mean:
+        da_mean = xr.concat([da_mean, ens_mean], dim="gcm")
+
     da_mean = da_mean.transpose(xdim,ydim)
     data_dict = av_da2dict(da_mean)
+    sig_dict = None
+    sig_dict_bool = None
+    if sig is not None:
+        sig = sig.squeeze()
+        sig_dict = av_da2dict(sig)
+        sig_dict_bool = copy.deepcopy(sig_dict)
+        for key in data_dict:
+            for key2 in data_dict[key]:
+                if key == "Ensemble-mean":
+                    if not "Ensemble-mean" in sig_dict_bool:
+                        sig_dict_bool[key] = {}
+                    sig_dict_bool[key][key2] = None
+                elif data_dict[key][key2] > 0. and sig_dict[key][key2] > 0.:
+                    sig_dict_bool[key][key2] = 1
+                elif data_dict[key][key2] < 0. and sig_dict[key][key2] < 0.:
+                    sig_dict_bool[key][key2] = 1
+                else:
+                    sig_dict_bool[key][key2] = None
+                # print(key, key2, data_dict[key][key2], sig_dict[key][key2], sig_dict_bool[key][key2])
     fig, ax = plt.subplots()
-    lib_standards.hinton(ax, data_dict)
+    lib_standards.table_plot(ax, data_dict)
     return ax
 
 
